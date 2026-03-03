@@ -1,0 +1,10 @@
+# Ignore Debug Outputs
+/Debug/*
+!/Debug/*.hex
+*.launch
+
+# Ignore Release Outputs
+/Release/*
+
+# Ignore Settings
+/.settings/*
