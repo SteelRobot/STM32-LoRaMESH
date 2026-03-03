@@ -45,8 +45,8 @@ UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-uint8_t final_data[15];
-uint8_t rx_data[15];
+uint8_t final_data[512];
+uint8_t rx_data[512];
 uint8_t temp[2];
 int indx = 0;
 /* USER CODE END PV */
@@ -101,15 +101,6 @@ int main(void)
 
   LoRa_Init(&huart1, &huart2);
 
-  LoRa_ModeSelect(MODE_CONFIG);
-  LoRa_ReadRegister(ADDH);
-  LoRa_ReadRegister(ADDL);
-  LoRa_ReadRegister(NETID);
-  LoRa_ReadRegister(REG0);
-  LoRa_ReadRegister(REG1);
-  LoRa_ReadRegister(REG2);
-  LoRa_ReadRegister(REG3);
-  LoRa_ReadProductInfo();
 
   /* USER CODE END 2 */
 
@@ -117,14 +108,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  HAL_Delay(5000);
-	  LoRa_ModeSelect(MODE_NORMAL);
-
-	  HAL_Delay(5000);
-	  LoRa_ModeSelect(MODE_WOR);
-
-	  HAL_Delay(5000);
-	  LoRa_ModeSelect(MODE_SLEEP);
 
     /* USER CODE END WHILE */
 
