@@ -45,10 +45,7 @@ UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-//uint8_t final_data[512];
-//uint8_t rx_data[512];
-//uint8_t temp[2];
-//int indx = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,7 +59,10 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+//uint8_t rx_data_to_send[512] = {0};
+//uint8_t rx_buffer[512] = {0};
+//uint8_t rx_byte;
+//uint8_t rx_index = 0;
 /* USER CODE END 0 */
 
 /**
@@ -97,38 +97,38 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-//  HAL_UART_Receive_IT(&huart2, temp, 1);
 
   LoRa_Init(&huart1, &huart2);
-
 //  LoRa_Set_Address(0x00AA); 	// For the first module - black wire STML1
 //  LoRa_Set_Address(0x00BB); 	// For the second module - white wire STML1
 //  LoRa_Set_Address(0x00CC); 	// For the third module - black wire STML4
 
-  LoRa_Set_NetID(0x00EE);
-
-  LoRa_Set_SerialPortRate(SPR_9600);
-  LoRa_Set_SerialParityBit(SPB_8N1);
-  LoRa_Set_AirDataRate(ADR_62_5K);
-
-  LoRa_Set_SubPacketSetting(SPS_240);
-  LoRa_Set_RSSIAmbientNoise(DISABLE);
-  LoRa_Set_TransmittingPower(TP_22DBM);
-
-  LoRa_Set_Channel(18);
-
-  LoRa_Set_RSSIEnable(DISABLE);
-  LoRa_Set_TransmissionMode(TM_TRANSPARENT);
-  LoRa_Set_ReplyEnable(DISABLE);
-  LoRa_Set_LBTEnable(DISABLE);
-  LoRa_Set_WORTransceiverControl(WOR_RECEIVER);
-  LoRa_Set_WORCycle(CYCLE_2000MS);
-
-  LoRa_Set_Encryption(0xFEED);
+//  LoRa_Set_NetID(0x00EE);
+//
+//  LoRa_Set_SerialPortRate(SPR_9600);
+//  LoRa_Set_SerialParityBit(SPB_8N1);
+//  LoRa_Set_AirDataRate(ADR_2_4K);
+//
+//  LoRa_Set_SubPacketSetting(SPS_32);
+//  LoRa_Set_RSSIAmbientNoise(DISABLE);
+//  LoRa_Set_TransmittingPower(TP_22DBM);
+//
+//  LoRa_Set_Channel(18);
+//
+//  LoRa_Set_RSSIEnable(DISABLE);
+//  LoRa_Set_TransmissionMode(TM_TRANSPARENT);
+//  LoRa_Set_ReplyEnable(DISABLE);
+//  LoRa_Set_LBTEnable(DISABLE);
+//  LoRa_Set_WORTransceiverControl(WOR_RECEIVER);
+//  LoRa_Set_WORCycle(CYCLE_2000MS);
+//
+//  LoRa_Set_Encryption(0xFEED);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+  LoRa_ModeSelect(MODE_NORMAL);
   while (1)
   {
 
@@ -306,21 +306,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
-//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-//{
-//	memcpy(rx_data + indx, temp, 1);
-//	if (++indx >= sizeof(rx_data)) indx = 0;
-//
-//	if (temp[0] == '\r') {
-//		memset(final_data, 0, sizeof(final_data));
-//		memcpy(final_data, rx_data, indx - 1);
-//		memset(rx_data, 0, sizeof(rx_data));
-//		indx = 0;
-//	}
-//
-//	HAL_UART_Receive_IT(&huart2, temp, 1);
-//}
 
 /* USER CODE END 4 */
 

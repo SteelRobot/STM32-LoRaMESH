@@ -25,3 +25,10 @@
   - Moved library files to a separate source folder
   - Included it in project settings (Not sure if that would get carried over to Git, since .settings folder is excluded from commits)
     - To remedy that, added the instruction into [User Manual](UserManual.md)
+
+## 04/03/2026 - night
+
+- Further LoRa.c improvements
+  - Added interrupt-handling to send messages from keyboard
+  - Added interrupt-handling to receive messages from other modules
+  - Edited a few functions to disable interrupts in them in order to properly receive module's own replies (Not external messages)

@@ -1,5 +1,6 @@
 #include "main.h"
 #include "LoRa.h"
+#include <string.h>
 
 #define COMMAND_READ_PREFIX 0xC1
 #define COMMAND_WRITE_PREFIX 0xC0
@@ -13,8 +14,18 @@ uint16_t PIN_M0;
 uint16_t PIN_M1;
 uint16_t PIN_AUX;
 uint16_t PIN_LED;
-extern UART_HandleTypeDef huart1; UART_HandleTypeDef *LoRa_UART;
+UART_HandleTypeDef *LoRa_UART;
 UART_HandleTypeDef *COM_UART;
+
+uint8_t rx_data_to_send[512] = {0};
+uint8_t rx_buffer[512] = {0};
+uint8_t rx_byte;
+uint8_t rx_index = 0;
+
+uint8_t tx_data_to_send[512] = {0};
+uint8_t tx_buffer[512] = {0};
+uint8_t tx_byte;
+uint8_t tx_index = 0;
 
 uint8_t command_buffer[4];
 uint8_t response_buffer[4];
@@ -48,6 +59,9 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2)
 	LoRa_ReadRegister(REG2);
 	LoRa_ReadRegister(REG3);
     HAL_UART_Transmit(COM_UART, postamble, sizeof(postamble), SLEEP_TIME);
+
+	HAL_UART_Receive_IT(LoRa_UART, &rx_byte, 1);
+	HAL_UART_Receive_IT(COM_UART, &tx_byte, 1);
 }
 
 // 00 - Normal mode
@@ -99,10 +113,13 @@ void LoRa_ReadRegister(uint8_t address) {
     command_buffer[command_index++] = COMMAND_READ_PREFIX;
     command_buffer[command_index++] = address;
     command_buffer[command_index++] = 0x1;
+	HAL_NVIC_DisableIRQ(USART1_IRQn);
+	LoRa_UART->RxState = HAL_UART_STATE_READY;
 	HAL_UART_Transmit(LoRa_UART, command_buffer, command_index, SLEEP_TIME);
     HAL_UART_Receive(LoRa_UART, response_buffer, sizeof(response_buffer), SLEEP_TIME);
     LoRa_Convert(response_buffer, com_response_buffer, sizeof(response_buffer));
     HAL_UART_Transmit(COM_UART, com_response_buffer, sizeof(com_response_buffer), SLEEP_TIME);
+	HAL_NVIC_EnableIRQ(USART1_IRQn);
 }
 
 // To return just the register's value
@@ -111,8 +128,11 @@ uint8_t LoRa_ReadRegisterValue(uint8_t address) {
     command_buffer[command_index++] = COMMAND_READ_PREFIX;
     command_buffer[command_index++] = address;
     command_buffer[command_index++] = 0x1;
+    HAL_NVIC_DisableIRQ(USART1_IRQn);
+    LoRa_UART->RxState = HAL_UART_STATE_READY;
 	HAL_UART_Transmit(LoRa_UART, command_buffer, command_index, SLEEP_TIME);
     HAL_UART_Receive(LoRa_UART, response_buffer, sizeof(response_buffer), SLEEP_TIME);
+	HAL_NVIC_EnableIRQ(USART1_IRQn);
     return response_buffer[3];
 }
 
@@ -122,10 +142,13 @@ void LoRa_WriteRegister(uint8_t address, uint8_t parameter) {
     command_buffer[command_index++] = address;
     command_buffer[command_index++] = 0x1;
     command_buffer[command_index++] = parameter;
+    HAL_NVIC_DisableIRQ(USART1_IRQn);
+    LoRa_UART->RxState = HAL_UART_STATE_READY;
 	HAL_UART_Transmit(LoRa_UART, command_buffer, command_index, SLEEP_TIME);
     HAL_UART_Receive(LoRa_UART, response_buffer, sizeof(response_buffer), SLEEP_TIME);
     LoRa_Convert(response_buffer, com_response_buffer, sizeof(response_buffer));
     HAL_UART_Transmit(COM_UART, com_response_buffer, sizeof(com_response_buffer), SLEEP_TIME);
+	HAL_NVIC_EnableIRQ(USART1_IRQn);
 }
 
 // Register PID has 7 bytes
@@ -137,13 +160,14 @@ void LoRa_ReadProductInfo() {
     command_buffer[command_index++] = COMMAND_READ_PREFIX;
     command_buffer[command_index++] = PID;
     command_buffer[command_index++] = 0x7;
-
+    HAL_NVIC_DisableIRQ(USART1_IRQn);
+    LoRa_UART->RxState = HAL_UART_STATE_READY;
 	HAL_UART_Transmit(LoRa_UART, command_buffer, command_index, 1000);
     HAL_UART_Receive(LoRa_UART, product_response_buffer, sizeof(product_response_buffer), SLEEP_TIME);
     LoRa_Convert(product_response_buffer, com_product_response_buffer, sizeof(product_response_buffer));
     HAL_UART_Transmit(COM_UART, preamble, sizeof(preamble), 1000);
     HAL_UART_Transmit(COM_UART, com_product_response_buffer, sizeof(com_product_response_buffer), SLEEP_TIME);
-    HAL_Delay(SLEEP_TIME);
+	HAL_NVIC_EnableIRQ(USART1_IRQn);
 }
 
 void LoRa_Convert(uint8_t *buffer, uint8_t *com_buffer, uint8_t buffer_size) {
@@ -279,10 +303,44 @@ void LoRa_Set_Encryption(uint16_t key) {
 
 // External interrupt on AUX change - writes the state to LED output
 // Might remove it due to LED being useless here
-//void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-//{
-//	if (GPIO_Pin == AUX_Pin) {
-//		GPIO_PinState AUX_state = HAL_GPIO_ReadPin(GPIOx_AUX, PIN_AUX);
-//		HAL_GPIO_WritePin(GPIOx_LED, PIN_LED, AUX_state);
-//	}
-//}
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	if (GPIO_Pin == AUX_Pin) {
+		GPIO_PinState AUX_state = HAL_GPIO_ReadPin(GPIOx_AUX, PIN_AUX);
+		HAL_GPIO_WritePin(GPIOx_LED, PIN_LED, AUX_state);
+	}
+}
+
+// UART Interrupt to receive data from LoRa module, and to send your own data from keyboard
+// USART1 part may be removed later, as I have no idea how to properly receive replies in Config Mode, and HAL_NVIC_EnableIRQ(USART1_IRQn) seems to somehow break it all
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+	if (huart->Instance==USART1) {
+		rx_buffer[rx_index] = rx_byte;
+		if (++rx_index >= sizeof(rx_buffer))
+			rx_index = 0;
+
+		if (rx_byte == '\n' || rx_byte == '\r') {
+			memset(rx_data_to_send, 0, sizeof(rx_data_to_send));
+			memcpy(rx_data_to_send, rx_buffer, rx_index);
+			memset(rx_buffer, 0, sizeof(rx_buffer));
+			HAL_UART_Transmit(COM_UART, rx_data_to_send, rx_index, SLEEP_TIME);
+			rx_index = 0;
+		}
+		HAL_UART_Receive_IT(LoRa_UART, &rx_byte, 1);
+	}
+	else
+		if (huart->Instance==USART2) {
+		tx_buffer[tx_index] = tx_byte;
+		if (++tx_index >= sizeof(tx_buffer))
+			tx_index = 0;
+
+		if (tx_byte == '\n' || tx_byte == '\r') {
+			memset(tx_data_to_send, 0, sizeof(tx_data_to_send));
+			memcpy(tx_data_to_send, tx_buffer, tx_index);
+			memset(tx_buffer, 0, sizeof(tx_buffer));
+			HAL_UART_Transmit(LoRa_UART, tx_data_to_send, tx_index, SLEEP_TIME);
+			tx_index = 0;
+		}
+		HAL_UART_Receive_IT(COM_UART, &tx_byte, 1);
+	}
+}
