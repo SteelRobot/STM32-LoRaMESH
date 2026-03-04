@@ -99,6 +99,7 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2);
 void LoRa_ModeSelect(enum Mode mode);
 void LoRa_WriteAUXToLED();
 void LoRa_ReadRegister(uint8_t address);
+uint8_t LoRa_ReadRegisterValue(uint8_t address);
 void LoRa_WriteRegister(uint8_t address, uint8_t parameter);
 void LoRa_SendCommand();
 void LoRa_Convert(uint8_t *buffer, uint8_t *com_buffer, uint8_t buffer_size);

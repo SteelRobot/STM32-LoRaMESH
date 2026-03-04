@@ -101,7 +101,9 @@ int main(void)
 
   LoRa_Init(&huart1, &huart2);
 
-
+  LoRa_Set_SubPacketSetting(SPS_32);
+  LoRa_Set_RSSIAmbientNoise(DISABLE);
+  LoRa_ReadRegister(REG1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
