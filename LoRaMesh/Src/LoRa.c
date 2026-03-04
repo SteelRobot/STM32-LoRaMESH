@@ -1,6 +1,5 @@
 #include "main.h"
 #include "LoRa.h"
-#include "stm32l1xx_hal.h"
 
 #define COMMAND_READ_PREFIX 0xC1
 #define COMMAND_WRITE_PREFIX 0xC0
@@ -14,7 +13,7 @@ uint16_t PIN_M0;
 uint16_t PIN_M1;
 uint16_t PIN_AUX;
 uint16_t PIN_LED;
-UART_HandleTypeDef *LoRa_UART;
+extern UART_HandleTypeDef huart1; UART_HandleTypeDef *LoRa_UART;
 UART_HandleTypeDef *COM_UART;
 
 uint8_t command_buffer[4];
@@ -56,6 +55,21 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2)
 // 10 - Configuration mode
 // 11 - Deep sleep mode
 void LoRa_ModeSelect(enum Mode mode) {
+	GPIO_PinState AUX_state = HAL_GPIO_ReadPin(GPIOx_AUX, PIN_AUX);
+	if (AUX_state == GPIO_PIN_SET) {
+		HAL_Delay(2); // As per the user manual, switching only after 2ms when the output of AUX is high.
+	}
+
+/*
+What if AUX_state is 0?
+1. If module is sending data to MCU after receiving wireless data - falling edge occurs to wake up MCU and then during data transfer
+
+2. During wireless transmitting, if AUX = 1 user can input data less than 1000 bytes into internal buffer.
+	When AUX = 0 internal buffer didn't finish writing to RFIC completely.
+
+3. When power-on or instruction reset happens, OR module switches from deep sleep mode (Mode 3), self-check happens.
+	During self-check AUX = 0. After the rising edge it's ready to work
+*/
 	switch (mode) {
 	case MODE_NORMAL:
 	    HAL_GPIO_WritePin(GPIOx_M0, PIN_M0, GPIO_PIN_RESET);
@@ -66,8 +80,8 @@ void LoRa_ModeSelect(enum Mode mode) {
 	    HAL_GPIO_WritePin(GPIOx_M1, PIN_M1, GPIO_PIN_RESET);
 	    break;
 	case MODE_CONFIG:
-	    HAL_GPIO_WritePin(GPIOx_M0, PIN_M0, GPIO_PIN_RESET);
-	    HAL_GPIO_WritePin(GPIOx_M1, PIN_M1, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOx_M0, PIN_M0, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOx_M1, PIN_M1, GPIO_PIN_SET);
 	    break;
 	case MODE_SLEEP:
 	    HAL_GPIO_WritePin(GPIOx_M0, PIN_M0, GPIO_PIN_SET);
@@ -165,7 +179,16 @@ void LoRa_ResetFirmware() {
     HAL_UART_Transmit(COM_UART, postamble, sizeof(postamble), SLEEP_TIME);
 }
 
-// REG0 SETS BEGIN
+// ADDR NETID SETS BEGIN
+void LoRa_Set_Address(uint16_t addr) { // Can be set as 0xFFFF for broadcast monitoring
+	LoRa_WriteRegister(ADDH, addr >> 8);
+	LoRa_WriteRegister(ADDL, addr & 0xFF);
+}
+
+void LoRa_Set_NetID(uint8_t netid) {
+	LoRa_WriteRegister(NETID, netid);
+}
+// ADDR NETID SETS BEGIN
 void LoRa_Set_SerialPortRate(enum Serial_Port_Rate spr) {
 	uint8_t register_value = LoRa_ReadRegisterValue(REG0) & 0b00011111;
 	uint8_t parameter = register_value | (spr << 5);
@@ -205,43 +228,54 @@ void LoRa_Set_TransmittingPower(enum Transmitting_Power tp) {
 }
 // REG1 SETS END
 
+// REG2 SETS BEGIN
+void LoRa_Set_Channel(uint8_t channel) {
+	LoRa_WriteRegister(REG2, channel);
+}
+// REG2 SETS END
+
 // REG3 SETS BEGIN
 void LoRa_Set_RSSIEnable(unsigned char state) {
 	uint8_t register_value = LoRa_ReadRegisterValue(REG3) & 0b01111111;
 	uint8_t parameter = register_value | (state << 7);
-	LoRa_WriteRegister(REG1, parameter);
+	LoRa_WriteRegister(REG3, parameter);
 }
 
 void LoRa_Set_TransmissionMode(enum Transmission_Mode tm) {
 	uint8_t register_value = LoRa_ReadRegisterValue(REG3) & 0b10111111;
 	uint8_t parameter = register_value | (tm << 6);
-	LoRa_WriteRegister(REG1, parameter);
+	LoRa_WriteRegister(REG3, parameter);
 }
 
 void LoRa_Set_ReplyEnable(unsigned char state) {
 	uint8_t register_value = LoRa_ReadRegisterValue(REG3) & 0b11011111;
 	uint8_t parameter = register_value | (state << 5);
-	LoRa_WriteRegister(REG1, parameter);
+	LoRa_WriteRegister(REG3, parameter);
 }
 
 void LoRa_Set_LBTEnable(unsigned char state) {
 	uint8_t register_value = LoRa_ReadRegisterValue(REG3) & 0b11101111;
 	uint8_t parameter = register_value | (state << 4);
-	LoRa_WriteRegister(REG1, parameter);
+	LoRa_WriteRegister(REG3, parameter);
 }
 
 void LoRa_Set_WORTransceiverControl(enum WOR_Transceiver_Control state) {
 	uint8_t register_value = LoRa_ReadRegisterValue(REG3) & 0b11110111;
 	uint8_t parameter = register_value | (state << 3);
-	LoRa_WriteRegister(REG1, parameter);
+	LoRa_WriteRegister(REG3, parameter);
 }
 
 void LoRa_Set_WORCycle(enum WOR_Cycle cycle) {
 	uint8_t register_value = LoRa_ReadRegisterValue(REG3) & 0b11111000;
 	uint8_t parameter = register_value | cycle;
-	LoRa_WriteRegister(REG1, parameter);
+	LoRa_WriteRegister(REG3, parameter);
 }
 // REG3 SETS END
+
+void LoRa_Set_Encryption(uint16_t key) {
+	LoRa_WriteRegister(CRYPT_H, key >> 8);
+	LoRa_WriteRegister(CRYPT_L, key & 0xFF);
+}
 
 // External interrupt on AUX change - writes the state to LED output
 // Might remove it due to LED being useless here

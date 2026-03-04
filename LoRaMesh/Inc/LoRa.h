@@ -1,7 +1,7 @@
 #ifndef INC_LORA_H_
 #define INC_LORA_H_
 
-#include "stm32l1xx_hal.h"
+#include "main.h"
 
 #define ADDH 0x0
 #define ADDL 0x1
@@ -106,17 +106,26 @@ void LoRa_Convert(uint8_t *buffer, uint8_t *com_buffer, uint8_t buffer_size);
 void LoRa_ReadProductInfo();
 void LoRa_ResetFirmware();
 
+void LoRa_Set_Address(uint16_t addr);
+void LoRa_Set_NetID(uint8_t netid);
+
 void LoRa_Set_SerialPortRate(enum Serial_Port_Rate spr);
 void LoRa_Set_SerialParityBit(enum Serial_Parity_Bit spb);
 void LoRa_Set_AirDataRate(enum Air_Data_Rate adr);
+
 void LoRa_Set_SubPacketSetting(enum Sub_Packet_Setting sps);
 void LoRa_Set_RSSIAmbientNoise(unsigned char state);
 void LoRa_Set_TransmittingPower(enum Transmitting_Power tp);
+
+void LoRa_Set_Channel(uint8_t channel); // Between 14 and 19 for Russia
+
 void LoRa_Set_RSSIEnable(unsigned char state);
 void LoRa_Set_TransmissionMode(enum Transmission_Mode tm);
 void LoRa_Set_ReplyEnable(unsigned char state);
 void LoRa_Set_LBTEnable(unsigned char state);
 void LoRa_Set_WORTransceiverControl(enum WOR_Transceiver_Control state);
 void LoRa_Set_WORCycle(enum WOR_Cycle cycle);
+
+void LoRa_Set_Encryption(uint16_t key);
 
 #endif /* INC_LORA_H_ */
