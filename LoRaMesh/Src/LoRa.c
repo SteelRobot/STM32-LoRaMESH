@@ -314,7 +314,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 // UART Interrupt to receive data from LoRa module, and to send your own data from keyboard
 // USART1 part may be removed later, as I have no idea how to properly receive replies in Config Mode, and HAL_NVIC_EnableIRQ(USART1_IRQn) seems to somehow break it all
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	if (huart->Instance==USART1) {
+	if (huart->Instance==LoRa_UART->Instance) {
 		rx_buffer[rx_index] = rx_byte;
 		if (++rx_index >= sizeof(rx_buffer))
 			rx_index = 0;
@@ -329,7 +329,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 		HAL_UART_Receive_IT(LoRa_UART, &rx_byte, 1);
 	}
 	else
-		if (huart->Instance==USART2) {
+		if (huart->Instance==COM_UART->Instance) {
 		tx_buffer[tx_index] = tx_byte;
 		if (++tx_index >= sizeof(tx_buffer))
 			tx_index = 0;

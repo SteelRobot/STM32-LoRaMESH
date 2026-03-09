@@ -32,3 +32,9 @@
   - Added interrupt-handling to send messages from keyboard
   - Added interrupt-handling to receive messages from other modules
   - Edited a few functions to disable interrupts in them in order to properly receive module's own replies (Not external messages)
+
+## 09/03/2026 - evening
+
+- Separated library further from hardware by putting it as an outside lib
+- Added a project for an STM32L4
+- Fixed interrupt handling

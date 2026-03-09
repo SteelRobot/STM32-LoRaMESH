@@ -1,10 +1,16 @@
 # Ignore Debug Outputs
-/Debug/*
-!/Debug/*.hex
+**/Debug/*
+**/Debug/*
 *.launch
 
 # Ignore Release Outputs
-/Release/*
+**/Release/
 
 # Ignore Settings
-/.settings/*
+.settings/*
+
+# Ignore Dolphin file
+**/.directory
+
+# Ignore Eclipse metadata
+/.metadata/*
