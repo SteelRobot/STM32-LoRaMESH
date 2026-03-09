@@ -6,8 +6,11 @@
 # Ignore Release Outputs
 **/Release/
 
+# Ignore .project file
+**/.project
+
 # Ignore Settings
-.settings/*
+**/.settings/
 
 # Ignore Dolphin file
 **/.directory
