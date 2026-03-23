@@ -98,7 +98,7 @@ enum WOR_Cycle {
 // REG3 ENUMS END
 
 
-void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2);
+void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, DMA_HandleTypeDef *hdma_usart1_rx);
 void LoRa_ModeSelect(enum Mode mode);
 void LoRa_WriteAUXToLED(void);
 uint8_t LoRa_ReadRegister(uint8_t address);

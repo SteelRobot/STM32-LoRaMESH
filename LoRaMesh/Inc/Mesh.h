@@ -54,7 +54,7 @@ struct DataPacket {
     uint8_t data[MTU_SIZE];
 };
 
-void Mesh_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2);
+void Mesh_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, DMA_HandleTypeDef *hdma_usart1_rx);
 
 void Mesh_ParsePacket(void);
 
