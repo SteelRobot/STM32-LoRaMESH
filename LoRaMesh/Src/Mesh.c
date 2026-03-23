@@ -17,9 +17,9 @@ struct RouteEntry routing_table[MAX_NETWORK_NODES];
 static uint32_t request_sequence = 0;
 static uint8_t channel;
 
-void Mesh_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2) {
+void Mesh_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, DMA_HandleTypeDef *hdma_usart1_rx) {
 
-	LoRa_Init(huart1, huart2);
+	LoRa_Init(huart1, huart2, hdma_usart1_rx);
 
 	current_node.node_id = current_node_address;
 	channel = current_node_channel;
@@ -48,12 +48,12 @@ void Mesh_SendData(struct NodeAddress target, uint8_t data, uint8_t data_size) {
 	memset(&data_packet, 0, sizeof(data_packet));
 
 	data_packet.address = target.node_id; // Actually should be next hop in the routing table
-	data_packet.address = channel;
+	data_packet.channel = channel;
 	data_packet.op_code = 0x00;
 	data_packet.total_length = sizeof(data_packet);
 	data_packet.sender_id = current_node;
 	data_packet.dest_id = target;
-	memcpy(data_packet.data, data, data_size);
+	memcpy(&data_packet.data, &data, data_size);
 
 	LoRa_SendData((uint8_t *) &data_packet, (uint8_t) sizeof(data_packet));
 }

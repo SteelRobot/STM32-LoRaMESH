@@ -1,11 +1,17 @@
 #include "main.h"
 #include "LoRa.h"
+#include "Mesh.h"
 #include <string.h>
 #include <stdio.h>
 
 #define COMMAND_READ_PREFIX 0xC1
 #define COMMAND_WRITE_PREFIX 0xC0
 #define SLEEP_TIME 1000
+#define MODE_WORKING MODE_NORMAL
+
+#define RX_FINAL_SIZE 32
+#define RX_SIZE 16
+#define TX_SIZE 512
 
 static GPIO_TypeDef *GPIOx_M0;
 static GPIO_TypeDef *GPIOx_M1;
@@ -17,14 +23,16 @@ static uint16_t PIN_AUX;
 static uint16_t PIN_LED;
 static UART_HandleTypeDef *LoRa_UART;
 static UART_HandleTypeDef *COM_UART;
+static DMA_HandleTypeDef *LoRa_UART_DMA;
 
-static uint8_t rx_data_to_send[512] = { 0 };
-static uint8_t rx_buffer[512] = { 0 };
-static uint8_t rx_byte;
-static uint8_t rx_index = 0;
+static uint8_t rx_final_buffer[RX_FINAL_SIZE];
+static uint8_t rx_buffer[RX_SIZE];
+static uint16_t rx_data_len = 0;
+static uint16_t indx_1 = 0, indx_2 = 0, rx_cplt = 0;
+static bool receiving_config_data = false;
 
-static uint8_t tx_data_to_send[512] = { 0 };
-static uint8_t tx_buffer[512] = { 0 };
+static uint8_t tx_data_to_send[TX_SIZE] = { 0 };
+static uint8_t tx_buffer[TX_SIZE] = { 0 };
 static uint8_t tx_byte;
 static uint8_t tx_index = 0;
 
@@ -36,10 +44,12 @@ uint8_t current_node_channel;
 
 uint8_t target_address;
 
-void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2) {
+void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2,
+		DMA_HandleTypeDef *hdma_usart1_rx) {
 
 	LoRa_UART = huart1;
 	COM_UART = huart2;
+	LoRa_UART_DMA = hdma_usart1_rx;
 
 	GPIOx_M0 = M0_GPIO_Port;
 	GPIOx_M1 = M1_GPIO_Port;
@@ -51,8 +61,9 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2) {
 	PIN_LED = LED_Pin;
 	PIN_AUX = AUX_Pin;
 
+	HAL_UARTEx_ReceiveToIdle_DMA(LoRa_UART, rx_buffer, RX_SIZE);
+
 	printf("Init LoRa Module:\n");
-	LoRa_ModeSelect(MODE_CONFIG);
 	uint8_t addh = LoRa_ReadRegister(ADDH);
 	uint8_t addl = LoRa_ReadRegister(ADDL);
 	printf("ADDH =  0x%04X\n", addh);
@@ -66,9 +77,7 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2) {
 	printf("REG2 =  0x%04X\n", current_node_channel);
 	printf("REG3 =  0x%04X\n", LoRa_ReadRegister(REG3));
 
-	HAL_UART_Receive_IT(LoRa_UART, &rx_byte, 1);
 	HAL_UART_Receive_IT(COM_UART, &tx_byte, 1);
-	LoRa_ModeSelect(MODE_NORMAL);
 	printf("Init done.\n");
 }
 
@@ -119,29 +128,33 @@ void LoRa_ModeSelect(enum Mode mode) {
 
 // To return just the register's value
 uint8_t LoRa_ReadRegister(uint8_t address) {
+	LoRa_ModeSelect(MODE_CONFIG);
+	receiving_config_data = true;
 	uint8_t command_index = 0;
 	command_buffer[command_index++] = COMMAND_READ_PREFIX;
 	command_buffer[command_index++] = address;
 	command_buffer[command_index++] = 0x1;
-	HAL_NVIC_DisableIRQ(USART1_IRQn);
-	LoRa_UART->RxState = HAL_UART_STATE_READY;
 	HAL_UART_Transmit(LoRa_UART, command_buffer, command_index, SLEEP_TIME);
-	HAL_UART_Receive(LoRa_UART, response_buffer, sizeof(response_buffer),
-			SLEEP_TIME);
-	HAL_NVIC_EnableIRQ(USART1_IRQn);
-	return response_buffer[3];
+	HAL_Delay(50);
+	LoRa_ModeSelect(MODE_WORKING);
+	receiving_config_data = false;
+	if (indx_1 > 0)
+		return rx_buffer[indx_1 - 1];
+	else
+		return rx_buffer[RX_SIZE - 1];
 }
 
 void LoRa_WriteRegister(uint8_t address, uint8_t parameter) {
+	LoRa_ModeSelect(MODE_CONFIG);
+	receiving_config_data = true;
 	uint8_t command_index = 0;
 	command_buffer[command_index++] = COMMAND_WRITE_PREFIX;
 	command_buffer[command_index++] = address;
 	command_buffer[command_index++] = 0x1;
 	command_buffer[command_index++] = parameter;
-	HAL_NVIC_DisableIRQ(USART1_IRQn);
-	LoRa_UART->RxState = HAL_UART_STATE_READY;
 	HAL_UART_Transmit(LoRa_UART, command_buffer, command_index, SLEEP_TIME);
-	HAL_NVIC_EnableIRQ(USART1_IRQn);
+	LoRa_ModeSelect(MODE_WORKING);
+	receiving_config_data = false;
 }
 
 void LoRa_SendData(uint8_t *buffer, uint8_t buffer_size) {
@@ -156,14 +169,11 @@ void LoRa_ReadProductInfo(void) {
 	command_buffer[command_index++] = COMMAND_READ_PREFIX;
 	command_buffer[command_index++] = PID;
 	command_buffer[command_index++] = 0x7;
-	HAL_NVIC_DisableIRQ(USART1_IRQn);
-	LoRa_UART->RxState = HAL_UART_STATE_READY;
 	HAL_UART_Transmit(LoRa_UART, command_buffer, command_index, 1000);
-	HAL_UART_Receive(LoRa_UART, product_response_buffer,
-			sizeof(product_response_buffer), SLEEP_TIME);
-	printf("Product info:\n");
-	printf("%s\n", com_product_response_buffer);
-	HAL_NVIC_EnableIRQ(USART1_IRQn);
+//	HAL_UART_Receive(LoRa_UART, product_response_buffer,
+//			sizeof(product_response_buffer), SLEEP_TIME);
+//	printf("Product info:\n");
+//	printf("%s\n", com_product_response_buffer); TODO() Нормально сделать эту функцию с DMA
 }
 
 // Returns to factory default parameters
@@ -295,37 +305,46 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	}
 }
 
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+	rx_data_len = Size;
+
+	if(!receiving_config_data)
+		memcpy(rx_final_buffer + indx_2, rx_buffer + indx_1, rx_data_len);
+
+	if (rx_data_len == RX_SIZE) {
+		indx_2 = RX_SIZE * ++rx_cplt;
+		indx_1 = 0;
+	} else {
+		indx_2 = indx_2 + (rx_data_len - indx_1);
+		indx_1 = rx_data_len;
+
+		if (!receiving_config_data)
+			HAL_UART_Transmit(COM_UART, rx_final_buffer, indx_2, SLEEP_TIME);
+
+		memset(rx_final_buffer, 0, RX_FINAL_SIZE);
+		indx_2 = 0;
+	}
+	HAL_UARTEx_ReceiveToIdle_DMA(LoRa_UART, rx_buffer, RX_SIZE);
+}
+
 // UART Interrupt to receive data from LoRa module, and to send your own data from keyboard
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	if (huart->Instance == LoRa_UART->Instance) {
-		rx_buffer[rx_index] = rx_byte;
-		if (++rx_index >= sizeof(rx_buffer))
-			rx_index = 0;
+	if (huart->Instance == COM_UART->Instance) {
 
-		if (rx_byte == '\n' || rx_byte == '\r') {
-			memset(rx_data_to_send, 0, sizeof(rx_data_to_send));
-			memcpy(rx_data_to_send, rx_buffer, rx_index);
-			memset(rx_buffer, 0, sizeof(rx_buffer));
-			printf("%s\n", rx_data_to_send);
-			rx_index = 0;
-		}
-		HAL_UART_Receive_IT(LoRa_UART, &rx_byte, 1);
-	}
-
-	else if (huart->Instance == COM_UART->Instance) {
-
+		struct NodeAddress target_address;
 		tx_buffer[tx_index] = tx_byte;
-		if (++tx_index >= sizeof(tx_buffer))
+		if (++tx_index >= TX_SIZE)
 			tx_index = 0;
 
 		if (tx_index > 2)
-			target_address = tx_buffer[0];
+			target_address.node_id = 170;
 
 		if (tx_byte == '\n' || tx_byte == '\r') {
-			memset(tx_data_to_send, 0, sizeof(tx_data_to_send));
+			memset(tx_data_to_send, 0, TX_SIZE);
 			memcpy(tx_data_to_send, tx_buffer, tx_index);
-			memset(tx_buffer, 0, sizeof(tx_buffer));
-			Mesh_SendData(target_address, tx_data_to_send, tx_index);
+			memset(tx_buffer, 0, TX_SIZE);
+//			Mesh_SendData(target_address, *tx_data_to_send, tx_index);
+			HAL_UART_Transmit(LoRa_UART, tx_data_to_send, tx_index, SLEEP_TIME);
 			tx_index = 0;
 		}
 		HAL_UART_Receive_IT(COM_UART, &tx_byte, 1);
