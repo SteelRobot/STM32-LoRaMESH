@@ -1,7 +1,6 @@
 #ifndef INC_LORA_H_
 #define INC_LORA_H_
 
-#include "main.h"
 #include <stdbool.h>
 
 #define ADDH 0x0
@@ -15,7 +14,13 @@
 #define CRYPT_L 0x8
 #define PID 0x80
 
-extern uint8_t current_node_address;
+#define SUCCESS	0xFF
+#define FAIL 0x00
+
+extern UART_HandleTypeDef *LoRa_UART;
+extern UART_HandleTypeDef *COM_UART;
+
+extern uint16_t current_node_address;
 extern uint8_t current_node_channel;
 
 // MODE ENUMS BEGIN
@@ -103,7 +108,7 @@ void LoRa_ModeSelect(enum Mode mode);
 void LoRa_WriteAUXToLED(void);
 uint8_t LoRa_ReadRegister(uint8_t address);
 void LoRa_WriteRegister(uint8_t address, uint8_t parameter);
-void LoRa_SendData(uint8_t *buffer, uint8_t buffer_size);
+uint8_t LoRa_SendData(uint8_t *buffer, uint8_t buffer_size);
 void LoRa_ReadProductInfo(void);
 void LoRa_ResetFirmware(void);
 
@@ -118,7 +123,7 @@ void LoRa_Set_SubPacketSetting(enum Sub_Packet_Setting sps);
 void LoRa_Set_RSSIAmbientNoise(bool state);
 void LoRa_Set_TransmittingPower(enum Transmitting_Power tp);
 
-void LoRa_Set_Channel(uint8_t channel); // Between 14 and 19 for Russia
+void LoRa_Set_Channel(uint8_t channel); // 19 for Russia
 
 void LoRa_Set_RSSIEnable(bool state);
 void LoRa_Set_TransmissionMode(enum Transmission_Mode tm);
@@ -128,5 +133,7 @@ void LoRa_Set_WORTransceiverControl(enum WOR_Transceiver_Control state);
 void LoRa_Set_WORCycle(enum WOR_Cycle cycle);
 
 void LoRa_Set_Encryption(uint16_t key);
+
+void LoRa_Start_Receive();
 
 #endif /* INC_LORA_H_ */

@@ -9,9 +9,8 @@
 #define SLEEP_TIME 1000
 #define MODE_WORKING MODE_NORMAL
 
-#define RX_FINAL_SIZE 32
-#define RX_SIZE 16
-#define TX_SIZE 512
+#define RX_FINAL_SIZE 1024
+#define RX_SIZE 256
 
 static GPIO_TypeDef *GPIOx_M0;
 static GPIO_TypeDef *GPIOx_M1;
@@ -21,8 +20,8 @@ static uint16_t PIN_M0;
 static uint16_t PIN_M1;
 static uint16_t PIN_AUX;
 static uint16_t PIN_LED;
-static UART_HandleTypeDef *LoRa_UART;
-static UART_HandleTypeDef *COM_UART;
+UART_HandleTypeDef *LoRa_UART;
+UART_HandleTypeDef *COM_UART;
 static DMA_HandleTypeDef *LoRa_UART_DMA;
 
 static uint8_t rx_final_buffer[RX_FINAL_SIZE];
@@ -31,15 +30,9 @@ static uint16_t rx_data_len = 0;
 static uint16_t indx_1 = 0, indx_2 = 0, rx_cplt = 0;
 static bool receiving_config_data = false;
 
-static uint8_t tx_data_to_send[TX_SIZE] = { 0 };
-static uint8_t tx_buffer[TX_SIZE] = { 0 };
-static uint8_t tx_byte;
-static uint8_t tx_index = 0;
-
 static uint8_t command_buffer[4];
-static uint8_t response_buffer[4];
 
-uint8_t current_node_address;
+uint16_t current_node_address;
 uint8_t current_node_channel;
 
 uint8_t target_address;
@@ -61,23 +54,22 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2,
 	PIN_LED = LED_Pin;
 	PIN_AUX = AUX_Pin;
 
-	HAL_UARTEx_ReceiveToIdle_DMA(LoRa_UART, rx_buffer, RX_SIZE);
+	LoRa_Start_Receive();
 
 	printf("Init LoRa Module:\n");
 	uint8_t addh = LoRa_ReadRegister(ADDH);
 	uint8_t addl = LoRa_ReadRegister(ADDL);
-	printf("ADDH =  0x%04X\n", addh);
-	printf("ADDL =  0x%04X\n", addl);
+	printf("ADDH =  0x%02X\n", addh);
+	printf("ADDL =  0x%02X\n", addl);
 	current_node_address = (addh << 8) + addl;
 	printf("Address = %d\n", current_node_address);
-	printf("NETID = 0x%04X\n", LoRa_ReadRegister(NETID));
-	printf("REG0 =  0x%04X\n", LoRa_ReadRegister(REG0));
-	printf("REG1 =  0x%04X\n", LoRa_ReadRegister(REG1));
+	printf("NETID = 0x%02X\n", LoRa_ReadRegister(NETID));
+	printf("REG0 =  0x%02X\n", LoRa_ReadRegister(REG0));
+	printf("REG1 =  0x%02X\n", LoRa_ReadRegister(REG1));
 	current_node_channel = LoRa_ReadRegister(REG2);
-	printf("REG2 =  0x%04X\n", current_node_channel);
-	printf("REG3 =  0x%04X\n", LoRa_ReadRegister(REG3));
+	printf("REG2 =  0x%02X\n", current_node_channel);
+	printf("REG3 =  0x%02X\n", LoRa_ReadRegister(REG3));
 
-	HAL_UART_Receive_IT(COM_UART, &tx_byte, 1);
 	printf("Init done.\n");
 }
 
@@ -154,30 +146,25 @@ void LoRa_WriteRegister(uint8_t address, uint8_t parameter) {
 	command_buffer[command_index++] = parameter;
 	HAL_UART_Transmit(LoRa_UART, command_buffer, command_index, SLEEP_TIME);
 	LoRa_ModeSelect(MODE_WORKING);
+	HAL_Delay(10);
 	receiving_config_data = false;
 }
 
-void LoRa_SendData(uint8_t *buffer, uint8_t buffer_size) {
+uint8_t LoRa_SendData(uint8_t *buffer, uint8_t buffer_size) {
 	HAL_UART_Transmit(LoRa_UART, buffer, buffer_size, SLEEP_TIME);
+	return SUCCESS;
 }
 
 // Register PID has 7 bytes
 void LoRa_ReadProductInfo(void) {
-	uint8_t command_index = 0;
-	uint8_t product_response_buffer[10];
-	uint8_t com_product_response_buffer[30];
-	command_buffer[command_index++] = COMMAND_READ_PREFIX;
-	command_buffer[command_index++] = PID;
-	command_buffer[command_index++] = 0x7;
-	HAL_UART_Transmit(LoRa_UART, command_buffer, command_index, 1000);
-//	HAL_UART_Receive(LoRa_UART, product_response_buffer,
-//			sizeof(product_response_buffer), SLEEP_TIME);
-//	printf("Product info:\n");
-//	printf("%s\n", com_product_response_buffer); TODO() Нормально сделать эту функцию с DMA
+	printf("Product info:\n");
+	for (int i = 0; i < 6; i++)
+		printf("0x%02X ", LoRa_ReadRegister(PID + i));
+	printf("0x%02X\n", LoRa_ReadRegister(PID));
 }
 
 // Returns to factory default parameters
-// Frequency		- 868.125MHz
+// Frequency		- 869.125MHz
 // Address			- 0x0000
 // Channel			- 0x12
 // Air data rate	- 2.4kbps
@@ -191,7 +178,7 @@ void LoRa_ResetFirmware(void) {
 	LoRa_WriteRegister(NETID, 0x0);
 	LoRa_WriteRegister(REG0, 0x62);
 	LoRa_WriteRegister(REG1, 0x00);
-	LoRa_WriteRegister(REG2, 0x12);
+	LoRa_WriteRegister(REG2, 0x13);
 	LoRa_WriteRegister(REG3, 0x3);
 	LoRa_WriteRegister(CRYPT_H, 0x0);
 	LoRa_WriteRegister(CRYPT_L, 0x0);
@@ -296,8 +283,10 @@ void LoRa_Set_Encryption(uint16_t key) {
 	LoRa_WriteRegister(CRYPT_L, key & 0xFF);
 }
 
-// External interrupt on AUX change - writes the state to LED output
-// Might remove it due to LED being useless here
+void LoRa_Start_Receive() {
+	HAL_UARTEx_ReceiveToIdle_DMA(LoRa_UART, rx_buffer, RX_SIZE);
+}
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == AUX_Pin) {
 		GPIO_PinState AUX_state = HAL_GPIO_ReadPin(GPIOx_AUX, PIN_AUX);
@@ -319,34 +308,10 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 		indx_1 = rx_data_len;
 
 		if (!receiving_config_data)
-			HAL_UART_Transmit(COM_UART, rx_final_buffer, indx_2, SLEEP_TIME);
+			Receive_Packet_Handler(rx_final_buffer, indx_2);
 
 		memset(rx_final_buffer, 0, RX_FINAL_SIZE);
 		indx_2 = 0;
 	}
-	HAL_UARTEx_ReceiveToIdle_DMA(LoRa_UART, rx_buffer, RX_SIZE);
-}
-
-// UART Interrupt to receive data from LoRa module, and to send your own data from keyboard
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	if (huart->Instance == COM_UART->Instance) {
-
-		struct NodeAddress target_address;
-		tx_buffer[tx_index] = tx_byte;
-		if (++tx_index >= TX_SIZE)
-			tx_index = 0;
-
-		if (tx_index > 2)
-			target_address.node_id = 170;
-
-		if (tx_byte == '\n' || tx_byte == '\r') {
-			memset(tx_data_to_send, 0, TX_SIZE);
-			memcpy(tx_data_to_send, tx_buffer, tx_index);
-			memset(tx_buffer, 0, TX_SIZE);
-//			Mesh_SendData(target_address, *tx_data_to_send, tx_index);
-			HAL_UART_Transmit(LoRa_UART, tx_data_to_send, tx_index, SLEEP_TIME);
-			tx_index = 0;
-		}
-		HAL_UART_Receive_IT(COM_UART, &tx_byte, 1);
-	}
+	LoRa_Start_Receive();
 }

@@ -22,8 +22,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
-#include "LoRa.h"
 #include "Mesh.h"
+#include "LoRa.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -110,10 +110,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  LoRa_Init(&huart1, &huart2, &hdma_usart1_rx);
-  LoRa_Set_Encryption(0xBEEF);
-  uint8_t wawa = LoRa_ReadRegister(REG2);
-  printf("wawa = %d\n", wawa);
+  Mesh_Init(&huart1, &huart2, &hdma_usart1_rx);
   /* USER CODE END 2 */
 
   /* Infinite loop */
