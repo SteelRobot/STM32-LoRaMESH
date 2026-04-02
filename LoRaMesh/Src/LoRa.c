@@ -1,6 +1,7 @@
 #include "main.h"
 #include "LoRa.h"
 #include "Mesh.h"
+#include "Packet_Handlers.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -22,7 +23,7 @@ static uint16_t PIN_AUX;
 static uint16_t PIN_LED;
 UART_HandleTypeDef *LoRa_UART;
 UART_HandleTypeDef *COM_UART;
-static DMA_HandleTypeDef *LoRa_UART_DMA;
+RTC_HandleTypeDef *Mesh_RTC;
 
 static uint8_t rx_final_buffer[RX_FINAL_SIZE];
 static uint8_t rx_buffer[RX_SIZE];
@@ -32,17 +33,14 @@ static bool receiving_config_data = false;
 
 static uint8_t command_buffer[4];
 
-uint16_t current_node_address;
-uint8_t current_node_channel;
+uint16_t my_id;
+uint8_t my_channel;
 
-uint8_t target_address;
-
-void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2,
-		DMA_HandleTypeDef *hdma_usart1_rx) {
+void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_HandleTypeDef *hrtc) {
 
 	LoRa_UART = huart1;
 	COM_UART = huart2;
-	LoRa_UART_DMA = hdma_usart1_rx;
+	Mesh_RTC = hrtc;
 
 	GPIOx_M0 = M0_GPIO_Port;
 	GPIOx_M1 = M1_GPIO_Port;
@@ -56,21 +54,28 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2,
 
 	LoRa_Start_Receive();
 
-	printf("Init LoRa Module:\n");
 	uint8_t addh = LoRa_ReadRegister(ADDH);
 	uint8_t addl = LoRa_ReadRegister(ADDL);
+	uint8_t netid = LoRa_ReadRegister(NETID);
+	uint8_t reg0 = LoRa_ReadRegister(REG0);
+	uint8_t reg1 = LoRa_ReadRegister(REG1);
+	my_channel = LoRa_ReadRegister(REG2);
+	uint8_t reg3 = LoRa_ReadRegister(REG3);
+	my_id = (addh << 8) + addl;
+
+#ifdef DEBUG
+	printf("Init LoRa Module:\n");
 	printf("ADDH =  0x%02X\n", addh);
 	printf("ADDL =  0x%02X\n", addl);
-	current_node_address = (addh << 8) + addl;
-	printf("Address = %d\n", current_node_address);
-	printf("NETID = 0x%02X\n", LoRa_ReadRegister(NETID));
-	printf("REG0 =  0x%02X\n", LoRa_ReadRegister(REG0));
-	printf("REG1 =  0x%02X\n", LoRa_ReadRegister(REG1));
-	current_node_channel = LoRa_ReadRegister(REG2);
-	printf("REG2 =  0x%02X\n", current_node_channel);
-	printf("REG3 =  0x%02X\n", LoRa_ReadRegister(REG3));
+	printf("Address = %d\n", my_id);
+	printf("NETID = 0x%02X\n", netid);
+	printf("REG0 =  0x%02X\n", reg0);
+	printf("REG1 =  0x%02X\n", reg1);
+	printf("REG2 =  0x%02X\n", my_channel);
+	printf("REG3 =  0x%02X\n", reg3);
 
 	printf("Init done.\n");
+#endif
 }
 
 // 00 - Normal mode
@@ -150,7 +155,7 @@ void LoRa_WriteRegister(uint8_t address, uint8_t parameter) {
 	receiving_config_data = false;
 }
 
-uint8_t LoRa_SendData(uint8_t *buffer, uint8_t buffer_size) {
+bool LoRa_SendData(uint8_t *buffer, uint8_t buffer_size) {
 	HAL_UART_Transmit(LoRa_UART, buffer, buffer_size, SLEEP_TIME);
 	return SUCCESS;
 }
