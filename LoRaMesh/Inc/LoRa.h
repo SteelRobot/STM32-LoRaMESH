@@ -14,14 +14,15 @@
 #define CRYPT_L 0x8
 #define PID 0x80
 
-#define SUCCESS	0xFF
-#define FAIL 0x00
+#define SUCCESS	true
+#define FAIL false
 
 extern UART_HandleTypeDef *LoRa_UART;
 extern UART_HandleTypeDef *COM_UART;
+extern RTC_HandleTypeDef *Mesh_RTC;
 
-extern uint16_t current_node_address;
-extern uint8_t current_node_channel;
+extern uint16_t my_id;
+extern uint8_t my_channel;
 
 // MODE ENUMS BEGIN
 enum Mode {
@@ -103,12 +104,12 @@ enum WOR_Cycle {
 // REG3 ENUMS END
 
 
-void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, DMA_HandleTypeDef *hdma_usart1_rx);
+void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_HandleTypeDef *hrtc);
 void LoRa_ModeSelect(enum Mode mode);
 void LoRa_WriteAUXToLED(void);
 uint8_t LoRa_ReadRegister(uint8_t address);
 void LoRa_WriteRegister(uint8_t address, uint8_t parameter);
-uint8_t LoRa_SendData(uint8_t *buffer, uint8_t buffer_size);
+bool LoRa_SendData(uint8_t *buffer, uint8_t buffer_size);
 void LoRa_ReadProductInfo(void);
 void LoRa_ResetFirmware(void);
 
