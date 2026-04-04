@@ -12,13 +12,13 @@ extern uint32_t DEBUG_timestamp;
 #include <stdlib.h>
 #include <inttypes.h>
 
-uint32_t Get_Timestamp();
-void rand_delay();
+uint32_t Get_Timestamp(void);
+void rand_delay(void);
 uint32_t Get_Rand(uint32_t x);
 
 #ifdef DEBUG
-void DEBUG_Start_Timing();
-uint32_t DEBUG_End_Timing();
+uint32_t DEBUG_Start_Timing(void);
+uint32_t DEBUG_End_Timing(uint32_t timestamp);
 #endif
 
 

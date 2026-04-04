@@ -35,7 +35,7 @@ static uint8_t rreq_pointer;
 void Mesh_Init() {
 	printf("Initializing Mesh Node\n");
 #ifdef DEBUG
-	DEBUG_Start_Timing();
+	uint32_t DEBUG_timestamp = DEBUG_Start_Timing();
 #endif
 	HAL_UART_Receive_IT(COM_UART, &tx_byte, 1);
 
@@ -52,7 +52,7 @@ void Mesh_Init() {
 #endif
 	Mesh_Send_Hello();
 #ifdef DEBUG
-	printf("\t\t\t\tDEBUG: Time to run Mesh_Init(): %ldms\n", DEBUG_End_Timing());
+	printf("\t\t\t\tDEBUG: Time to run Mesh_Init(): %" PRIu32 "ms\n", DEBUG_End_Timing(DEBUG_timestamp));
 #endif
 }
 
@@ -61,6 +61,9 @@ bool Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 
 	if (my_id == destination_id) {
 		printf("Sending a message to yourself? Abort\n");
+		return SUCCESS;
+	} else if (destination_id == 0xFFFF) {
+		printf("You will NOT broadcast messages.\n");
 		return SUCCESS;
 	}
 
@@ -258,22 +261,6 @@ bool Is_Fresher_Route(uint32_t new_seq, uint32_t old_seq) {
 // UART Interrupt to receive data from LoRa module, and to send your own data from keyboard
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart->Instance == COM_UART->Instance) {
-
-//		uint32_t target_address = 0;
-//		tx_buffer[tx_index] = tx_byte;
-//		if (++tx_index >= TX_SIZE)
-//			tx_index = 0;
-//
-//		if (tx_index > 2)
-//			target_address = tx_buffer[0] - '0';
-//
-//		if (tx_byte == '\n' || tx_byte == '\r') {
-//			memset(tx_data_to_send, 0, TX_SIZE);
-//			memcpy(tx_data_to_send, tx_buffer, tx_index);
-//			memset(tx_buffer, 0, TX_SIZE);
-//			Mesh_Transmit(target_address, &tx_data_to_send[2], tx_index - 2);
-//			tx_index = 0;
-//		}
 
 		tx_buffer[tx_index] = tx_byte;
 
