@@ -114,12 +114,6 @@ int main(void)
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
 	LoRa_Init(&huart1, &hlpuart1, &hrtc);
-	//Call LoRa functions to change parameters of the module
-
-	LoRa_Set_TransmissionMode(TM_FIXED_POINT);
-	LoRa_Set_Address(3);
-
-	//End calls
 
 	Mesh_Init();
   /* USER CODE END 2 */

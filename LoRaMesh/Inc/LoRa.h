@@ -107,7 +107,7 @@ enum WOR_Cycle {
 void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_HandleTypeDef *hrtc);
 void LoRa_ModeSelect(enum Mode mode);
 void LoRa_WriteAUXToLED(void);
-uint8_t LoRa_ReadRegister(uint8_t address);
+void LoRa_ReadRegister(uint8_t starting_address, uint8_t length);
 void LoRa_WriteRegister(uint8_t address, uint8_t parameter);
 bool LoRa_SendData(uint8_t *buffer, uint8_t buffer_size);
 void LoRa_ReadProductInfo(void);
@@ -136,5 +136,9 @@ void LoRa_Set_WORCycle(enum WOR_Cycle cycle);
 void LoRa_Set_Encryption(uint16_t key);
 
 void LoRa_Start_Receive();
+
+void Process_Packet();
+void Process_LoRa_Reply();
+void LoRa_Reply_Handler(uint8_t rx_final_buffer[], uint8_t starting_address, uint8_t data_length);
 
 #endif /* INC_LORA_H_ */

@@ -6,7 +6,8 @@
 #define UNICAST_TABLE_LENGTH 16
 #define NOROUTE_QUEUE_MAX_ENTRIES 5
 #define RREQ_TABLE_MAX_ENTRIES 10
-#define DEFAULT_ROUTE_EXPIRATION_TIME 1000
+#define DEFAULT_ROUTE_EXPIRATION_TIME 10
+#define MAX_PAYLOAD_SIZE 1024
 
 struct unicast_route_table_entry {
 	uint16_t destination_id;
@@ -18,17 +19,19 @@ struct unicast_route_table_entry {
 
 struct noroute_table_entry {
 	uint16_t destination_id;
-	uint8_t *data;
+	uint8_t data[MAX_PAYLOAD_SIZE];
 	uint8_t data_length;
 };
 
 extern struct unicast_route_table_entry unicast_route_table[UNICAST_TABLE_LENGTH];
 extern struct noroute_table_entry noroute_table[NOROUTE_QUEUE_MAX_ENTRIES];
-extern uint32_t unicast_entries;
 extern uint8_t noroute_table_entries;
+extern RTC_TimeTypeDef currentTime;
+extern RTC_DateTypeDef currentDate;
 
 void Mesh_Init();
 bool Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length);
+bool Noroute_Table_Add(uint16_t destination_id, uint8_t data[], uint8_t data_length);
 int8_t Route_Exists(uint16_t id);
 bool RREQ_Table_Contains(uint32_t rreq_id);
 bool RREQ_Table_Append(uint32_t rreq_id);
@@ -37,5 +40,6 @@ bool Mesh_Send_Hello();
 void Generate_RREQ_ID(void);
 uint8_t Increment_Sequence_Number(void);
 bool Is_Fresher_Route(uint32_t new_seq, uint32_t old_seq);
+uint8_t Update_Routes_Expiration();
 
 #endif /* INC_MESH_H_ */

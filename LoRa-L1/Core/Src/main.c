@@ -116,11 +116,12 @@ int main(void)
 
 	LoRa_Init(&huart1, &huart2, &hrtc);
 
-	//Call LoRa functions to change parameters of the module
+	// Set node's address here with LoRa_Set_Address(uint8_t address);
+	// Advisable to create multiple build for each MCU, so that you can assign addresses here, and just switch run configuration
+	// This way one ST-Link ID will be assigned to one address always
+	//BEGIN ADDRESS
 
-
-
-	//End calls
+	//END ADDRESS
 
 	Mesh_Init();
   /* USER CODE END 2 */
