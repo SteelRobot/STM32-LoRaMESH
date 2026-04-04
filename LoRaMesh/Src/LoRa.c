@@ -68,8 +68,6 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 	// START GLOBAL
 
 #ifdef DEBUG
-	LoRa_WriteRegister(REG1, 0x00);
-
 	LoRa_Set_Encryption(0xCAFE);
 
 	LoRa_Set_NetID(0xBF);
@@ -87,7 +85,7 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 	LoRa_Set_RSSIEnable(false);
 	LoRa_Set_TransmissionMode(TM_FIXED_POINT);
 	LoRa_Set_ReplyEnable(false);
-	LoRa_Set_LBTEnable(true);
+	LoRa_Set_LBTEnable(false);
 	LoRa_Set_WORTransceiverControl(WOR_RECEIVER);
 	LoRa_Set_WORCycle(CYCLE_2000MS);
 #endif
@@ -171,13 +169,13 @@ void LoRa_ReadRegister(uint8_t starting_address, uint8_t length) {
 	LoRa_ModeSelect(MODE_WORKING);
 }
 
-void LoRa_WriteRegister(uint8_t address, uint8_t parameter) {
+void LoRa_WriteRegister(uint8_t address, uint8_t length, uint8_t parameter) {
 	LoRa_ModeSelect(MODE_CONFIG);
 	receiving_config_data = true;
 	uint8_t command_index = 0;
 	command_buffer[command_index++] = COMMAND_WRITE_PREFIX;
 	command_buffer[command_index++] = address;
-	command_buffer[command_index++] = 0x1;
+	command_buffer[command_index++] = length;
 	command_buffer[command_index++] = parameter;
 	HAL_UART_Transmit(LoRa_UART, command_buffer, command_index, SLEEP_TIME);
 	HAL_Delay(SLEEP_TIME);
@@ -205,44 +203,44 @@ void LoRa_ReadProductInfo(void) {
 // Power			- 22dbm
 void LoRa_ResetFirmware(void) {
 	printf("Resetting firmware...\n");
-	LoRa_WriteRegister(ADDH, 0x00);
-	LoRa_WriteRegister(ADDL, 0x00);
-	LoRa_WriteRegister(NETID, 0x00);
-	LoRa_WriteRegister(REG0, 0x62);
-	LoRa_WriteRegister(REG1, 0x00);
-	LoRa_WriteRegister(REG2, 0x13);
-	LoRa_WriteRegister(REG3, 0x3);
-	LoRa_WriteRegister(CRYPT_H, 0x00);
-	LoRa_WriteRegister(CRYPT_L, 0x00);
+	LoRa_WriteRegister(ADDH, 1, 0x00);
+	LoRa_WriteRegister(ADDL, 1, 0x00);
+	LoRa_WriteRegister(NETID, 1, 0x00);
+	LoRa_WriteRegister(REG0, 1, 0x62);
+	LoRa_WriteRegister(REG1, 1, 0x00);
+	LoRa_WriteRegister(REG2, 1, 0x13);
+	LoRa_WriteRegister(REG3, 1, 0x3);
+	LoRa_WriteRegister(CRYPT_H, 1, 0x00);
+	LoRa_WriteRegister(CRYPT_L, 1, 0x00);
 	printf("Reset done!\n");
 }
 
 // ADDR NETID SETS BEGIN
 void LoRa_Set_Address(uint16_t addr) { // Can be set as 0xFFFF for broadcast monitoring
-	LoRa_WriteRegister(ADDH, addr >> 8);
-	LoRa_WriteRegister(ADDL, addr & 0xFF);
+	LoRa_WriteRegister(ADDH, 1, addr >> 8);
+	LoRa_WriteRegister(ADDL, 1, addr & 0xFF);
 }
 
 void LoRa_Set_NetID(uint8_t netid) {
-	LoRa_WriteRegister(NETID, netid);
+	LoRa_WriteRegister(NETID, 1, netid);
 }
 // ADDR NETID SETS BEGIN
 void LoRa_Set_SerialPortRate(enum Serial_Port_Rate spr) {
 	uint8_t register_value = reg0 & 0b00011111;
 	uint8_t parameter = register_value | (spr << 5);
-	LoRa_WriteRegister(REG0, parameter);
+	LoRa_WriteRegister(REG0, 1, parameter);
 }
 
 void LoRa_Set_SerialParityBit(enum Serial_Parity_Bit spb) {
 	uint8_t register_value = reg0 & 0b11100111;
 	uint8_t parameter = register_value | (spb << 3);
-	LoRa_WriteRegister(REG0, parameter);
+	LoRa_WriteRegister(REG0, 1, parameter);
 }
 
 void LoRa_Set_AirDataRate(enum Air_Data_Rate adr) {
 	uint8_t register_value = reg0 & 0b11111000;
 	uint8_t parameter = register_value | adr;
-	LoRa_WriteRegister(REG0, parameter);
+	LoRa_WriteRegister(REG0, 1, parameter);
 }
 // REG0 SETS END
 
@@ -250,25 +248,25 @@ void LoRa_Set_AirDataRate(enum Air_Data_Rate adr) {
 void LoRa_Set_SubPacketSetting(enum Sub_Packet_Setting sps) {
 	uint8_t register_value = reg1 & 0b00111111;
 	uint8_t parameter = register_value | (sps << 6);
-	LoRa_WriteRegister(REG1, parameter);
+	LoRa_WriteRegister(REG1, 1, parameter);
 }
 
 void LoRa_Set_RSSIAmbientNoise(bool state) {
 	uint8_t register_value = reg1 & 0b11011111;
 	uint8_t parameter = register_value | (state << 5);
-	LoRa_WriteRegister(REG1, parameter);
+	LoRa_WriteRegister(REG1, 1, parameter);
 }
 
 void LoRa_Set_TransmittingPower(enum Transmitting_Power tp) {
 	uint8_t register_value = reg1 & 0b11111100;
 	uint8_t parameter = register_value | tp;
-	LoRa_WriteRegister(REG1, parameter);
+	LoRa_WriteRegister(REG1, 1, parameter);
 }
 // REG1 SETS END
 
 // REG2 SETS BEGIN
 void LoRa_Set_Channel(uint8_t channel) {
-	LoRa_WriteRegister(REG2, channel);
+	LoRa_WriteRegister(REG2, 1, channel);
 }
 // REG2 SETS END
 
@@ -276,46 +274,46 @@ void LoRa_Set_Channel(uint8_t channel) {
 void LoRa_Set_RSSIEnable(bool state) {
 	uint8_t register_value = reg3 & 0b01111111;
 	uint8_t parameter = register_value | (state << 7);
-	LoRa_WriteRegister(REG3, parameter);
+	LoRa_WriteRegister(REG3, 1, parameter);
 }
 
 void LoRa_Set_TransmissionMode(enum Transmission_Mode tm) {
 	uint8_t register_value = reg3 & 0b10111111;
 	uint8_t parameter = register_value | (tm << 6);
-	LoRa_WriteRegister(REG3, parameter);
+	LoRa_WriteRegister(REG3, 1, parameter);
 }
 
 void LoRa_Set_ReplyEnable(bool state) {
 	uint8_t register_value = reg3 & 0b11011111;
 	uint8_t parameter = register_value | (state << 5);
-	LoRa_WriteRegister(REG3, parameter);
+	LoRa_WriteRegister(REG3, 1, parameter);
 }
 
 void LoRa_Set_LBTEnable(bool state) {
 	uint8_t register_value = reg3 & 0b11101111;
 	uint8_t parameter = register_value | (state << 4);
-	LoRa_WriteRegister(REG3, parameter);
+	LoRa_WriteRegister(REG3, 1, parameter);
 }
 
 void LoRa_Set_WORTransceiverControl(enum WOR_Transceiver_Control state) {
 	uint8_t register_value = reg3 & 0b11110111;
 	uint8_t parameter = register_value | (state << 3);
-	LoRa_WriteRegister(REG3, parameter);
+	LoRa_WriteRegister(REG3, 1, parameter);
 }
 
 void LoRa_Set_WORCycle(enum WOR_Cycle cycle) {
 	uint8_t register_value = reg3 & 0b11111000;
 	uint8_t parameter = register_value | cycle;
-	LoRa_WriteRegister(REG3, parameter);
+	LoRa_WriteRegister(REG3, 1, parameter);
 }
 // REG3 SETS END
 
 void LoRa_Set_Encryption(uint16_t key) {
-	LoRa_WriteRegister(CRYPT_H, key >> 8);
-	LoRa_WriteRegister(CRYPT_L, key & 0xFF);
+	LoRa_WriteRegister(CRYPT_H, 1, key >> 8);
+	LoRa_WriteRegister(CRYPT_L, 1, key & 0xFF);
 }
 
-void LoRa_Start_Receive() {
+void LoRa_Start_Receive(void) {
 	HAL_UARTEx_ReceiveToIdle_DMA(LoRa_UART, rx_buffer, RX_SIZE);
 }
 
@@ -358,7 +356,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 	LoRa_Start_Receive();
 }
 
-void Process_Packet() {
+void Process_Packet(void) {
 	while (indx_2 >= 2) {
 		uint8_t ptype = rx_final_buffer[0];
 		uint8_t payload_length = rx_final_buffer[1];
@@ -380,7 +378,7 @@ void Process_Packet() {
 	}
 }
 
-void Process_LoRa_Reply() {
+void Process_LoRa_Reply(void) {
 	while (indx_2 >= 3) {  // Must be: C1 | STARTING_ADDRESS | LENGTH
 		if (rx_final_buffer[0] != 0xC1) {
 #ifdef DEBUG

@@ -31,11 +31,11 @@ uint32_t Get_Rand(uint32_t x) {
 }
 
 #ifdef DEBUG
-void DEBUG_Start_Timing() {
-	DEBUG_timestamp = Get_Timestamp();
+uint32_t DEBUG_Start_Timing(void) {
+	return Get_Timestamp();
 }
 
-uint32_t DEBUG_End_Timing() {
-	return (Get_Timestamp() - DEBUG_timestamp);
+uint32_t DEBUG_End_Timing(uint32_t timestamp) {
+	return (Get_Timestamp() - timestamp);
 }
 #endif

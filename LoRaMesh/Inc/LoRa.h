@@ -108,7 +108,7 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 void LoRa_ModeSelect(enum Mode mode);
 void LoRa_WriteAUXToLED(void);
 void LoRa_ReadRegister(uint8_t starting_address, uint8_t length);
-void LoRa_WriteRegister(uint8_t address, uint8_t parameter);
+void LoRa_WriteRegister(uint8_t address, uint8_t length, uint8_t parameter);
 bool LoRa_SendData(uint8_t *buffer, uint8_t buffer_size);
 void LoRa_ReadProductInfo(void);
 void LoRa_ResetFirmware(void);
@@ -135,10 +135,10 @@ void LoRa_Set_WORCycle(enum WOR_Cycle cycle);
 
 void LoRa_Set_Encryption(uint16_t key);
 
-void LoRa_Start_Receive();
+void LoRa_Start_Receive(void);
 
-void Process_Packet();
-void Process_LoRa_Reply();
+void Process_Packet(void);
+void Process_LoRa_Reply(void);
 void LoRa_Reply_Handler(uint8_t rx_final_buffer[], uint8_t starting_address, uint8_t data_length);
 
 #endif /* INC_LORA_H_ */

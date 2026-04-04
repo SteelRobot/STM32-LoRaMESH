@@ -398,7 +398,7 @@ struct ping_packet Unpack_Packet_PING(uint8_t parr[]) {
 #ifdef DEBUG
 	printf("\tPING packet with:\n");
 	printf(
-			"\tnum_hops = %d\n\ttransmitter_id=%d\n\treceiver_id=%d\n\tdestination_id=%d\n\tsource_id=%d\nRequest or Reply:%d\n",
+			"\tnum_hops = %d\n\ttransmitter_id=%d\n\treceiver_id=%d\n\tdestination_id=%d\n\tsource_id=%d\n\request_or_reply:%d\n",
 			packet.num_hops, packet.transmitter_id, packet.receiver_id,
 			packet.destination_id, packet.source_id, packet.request_or_reply);
 #endif
