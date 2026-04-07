@@ -1,7 +1,12 @@
 #include "main.h"
+#include "Util.h"
 
-uint32_t DEBUG_timestamp;
-
+#ifdef DEBUG
+bool DEBUG_receive_to_send_flag;
+uint32_t DEBUG_receive_to_send_timestamp;
+uint32_t DEBUG_mesh_init_timestamp;
+uint32_t DEBUG_lora_init_timestamp;
+#endif
 uint32_t Get_Timestamp() {
 //	HAL_RTC_GetTime(&hrtc, &currentTime, RTC_FORMAT_BIN);
 //	HAL_RTC_GetDate(&hrtc, &currentDate, RTC_FORMAT_BIN);
@@ -17,7 +22,9 @@ uint32_t Get_Timestamp() {
 }
 
 void rand_delay() {
-	HAL_Delay(1);
+	HAL_RTC_GetTime(Mesh_RTC, &currentTime, RTC_FORMAT_BIN);
+
+	HAL_Delay(Get_Rand(currentTime.Seconds + currentTime.Minutes * 60 + currentTime.SubSeconds) % 5 + 1);
 }
 
 uint32_t Get_Rand(uint32_t x) {
