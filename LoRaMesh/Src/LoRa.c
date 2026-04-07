@@ -2,7 +2,9 @@
 #include "LoRa.h"
 #include "Mesh.h"
 #include "Packet_Handlers.h"
+#include "Util.h"
 #include <string.h>
+#include <inttypes.h>
 #include <stdio.h>
 
 #define COMMAND_READ_PREFIX 0xC1
@@ -25,16 +27,18 @@ UART_HandleTypeDef *LoRa_UART;
 UART_HandleTypeDef *COM_UART;
 RTC_HandleTypeDef *Mesh_RTC;
 
-uint8_t addh = 0;
-uint8_t addl = 0;
-uint8_t netid = 0;
-uint8_t reg0 = 0;
-uint8_t reg1 = 0;
-uint8_t reg2 = 0;
-uint8_t reg3 = 0;
+// DMA Circular Buffer
+static uint8_t rx_buffer[RX_SIZE];
+
+static uint8_t addh = 0;
+static uint8_t addl = 0;
+static uint8_t netid = 0;
+static uint8_t reg0 = 0;
+static uint8_t reg1 = 0;
+static uint8_t reg2 = 0;
+static uint8_t reg3 = 0;
 
 static uint8_t rx_final_buffer[RX_FINAL_SIZE];
-static uint8_t rx_buffer[RX_SIZE];
 static uint16_t indx_1 = 0, indx_2 = 0;
 static bool receiving_config_data = false;
 
@@ -44,6 +48,10 @@ uint16_t my_id;
 uint8_t my_channel;
 
 void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_HandleTypeDef *hrtc) {
+
+#ifdef DEBUG
+	DEBUG_lora_init_timestamp = Get_Timestamp();
+#endif
 
 	LoRa_UART = huart1;
 	COM_UART = huart2;
@@ -108,6 +116,8 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 	printf("ID: %d, Channel: %d, NETID: %d\n", my_id, my_channel, netid);
 
 	printf("Init done.\n");
+
+	printf("\t\t\t\tDEBUG: Time initialize LoRa: %" PRIu32 "ms\n", DEBUG_End_Timing(DEBUG_lora_init_timestamp));
 #endif
 }
 
@@ -180,11 +190,6 @@ void LoRa_WriteRegister(uint8_t address, uint8_t length, uint8_t parameter) {
 	HAL_UART_Transmit(LoRa_UART, command_buffer, command_index, SLEEP_TIME);
 	HAL_Delay(SLEEP_TIME);
 	LoRa_ModeSelect(MODE_WORKING);
-}
-
-bool LoRa_SendData(uint8_t *buffer, uint8_t buffer_size) {
-	HAL_UART_Transmit(LoRa_UART, buffer, buffer_size, SLEEP_TIME);
-	return SUCCESS;
 }
 
 // Register PID has 7 bytes
@@ -317,6 +322,16 @@ void LoRa_Start_Receive(void) {
 	HAL_UARTEx_ReceiveToIdle_DMA(LoRa_UART, rx_buffer, RX_SIZE);
 }
 
+void LoRa_SendData(uint8_t *buffer, uint8_t buffer_size) {
+	HAL_UART_Transmit(LoRa_UART, buffer, buffer_size, SLEEP_TIME);
+#ifdef DEBUG
+	if (DEBUG_receive_to_send_flag)
+		printf("\t\t\t\tDEBUG: Time between receiving a packet and sending a reply: %" PRIu32 "ms\n", DEBUG_End_Timing(DEBUG_receive_to_send_timestamp));
+	DEBUG_receive_to_send_flag = false;
+#endif
+}
+
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == AUX_Pin) {
 		GPIO_PinState AUX_state = HAL_GPIO_ReadPin(GPIOx_AUX, PIN_AUX);
@@ -342,16 +357,18 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 		indx_1 = Size;
 	}
 
-    __disable_irq();
+//    __disable_irq();
+
 	if (receiving_config_data) {
 		Process_LoRa_Reply();
 	} else {
 		Process_Packet();
 	}
-    __enable_irq();
+
+//    __enable_irq();
 
 #ifdef DEBUG
-	printf("Done processing a packet/packets\n");
+	printf("Done processing packets\n");
 #endif
 	LoRa_Start_Receive();
 }
@@ -363,7 +380,15 @@ void Process_Packet(void) {
 		uint16_t total_packet_size = OPCODE_OFFSET + LENGTH_OFFSET + payload_length;
 
 		if (indx_2 >= total_packet_size) {
+#ifdef DEBUG
+			DEBUG_receive_to_send_timestamp = Get_Timestamp();
+			DEBUG_receive_to_send_flag = true;
+#endif
 			Receive_Packet_Handler(rx_final_buffer, total_packet_size, ptype);
+
+#ifdef DEBUG
+			DEBUG_receive_to_send_flag = false;
+#endif
 
 			if (indx_2 > total_packet_size) {
 				memmove(rx_final_buffer, rx_final_buffer + total_packet_size,

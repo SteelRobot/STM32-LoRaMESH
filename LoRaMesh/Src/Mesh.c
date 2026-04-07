@@ -35,7 +35,7 @@ static uint8_t rreq_pointer;
 void Mesh_Init() {
 	printf("Initializing Mesh Node\n");
 #ifdef DEBUG
-	uint32_t DEBUG_timestamp = DEBUG_Start_Timing();
+	uint32_t DEBUG_mesh_init_timestamp = DEBUG_Start_Timing();
 #endif
 	HAL_UART_Receive_IT(COM_UART, &tx_byte, 1);
 
@@ -52,20 +52,32 @@ void Mesh_Init() {
 #endif
 	Mesh_Send_Hello();
 #ifdef DEBUG
-	printf("\t\t\t\tDEBUG: Time to run Mesh_Init(): %" PRIu32 "ms\n", DEBUG_End_Timing(DEBUG_timestamp));
+	printf("\t\t\t\tDEBUG: Time to run Mesh_Init(): %" PRIu32 "ms\n", DEBUG_End_Timing(DEBUG_mesh_init_timestamp));
 #endif
 }
 
-bool Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length) {
+void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length) {
 	bool isPing = false;
 
-	if (my_id == destination_id) {
+	printf("\n++++++++++++++++++++++++++++++++++++++++++");
+	printf("\nYOU -> Node %d\n", destination_id);
+	for (int i = 0; i < data_length; i++)
+		printf("%c", data[i]);
+	printf("\n++++++++++++++++++++++++++++++++++++++++++\n");
+
+	if (destination_id == my_id) {
 		printf("Sending a message to yourself? Abort\n");
-		return SUCCESS;
-	} else if (destination_id == 0xFFFF) {
-		printf("You will NOT broadcast messages.\n");
-		return SUCCESS;
+		return;
 	}
+	else if (destination_id == 0xFFFF) {
+		printf("You will NOT broadcast messages.\n");
+		return;
+	}
+	else if (destination_id == 0x0000) {
+		printf("This address is reserved for Hello messages.\n");
+		return;
+	}
+
 
 	if (data_length == 4 && memcmp(data, "ping", 4) == 0) {
 #ifdef DEBUG
@@ -78,38 +90,34 @@ bool Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 #endif
 
 	int8_t route_idx = Route_Exists(destination_id);
-	Update_Routes_Expiration();
 	if (route_idx != -1) {
-#ifdef DEBUG
-		printf("Route is known. Sending packet directly\n");
-#endif
 		struct unicast_route_table_entry route;
 		route = unicast_route_table[route_idx];
+
+#ifdef DEBUG
+		printf("Route to %d is known. N of hops: %d\n", destination_id, route.hop_count);
+#endif
+
 		if (isPing) {
-			Mesh_Send_PING(route.next_hop_destination_id, route.destination_id, my_id, 0, PING_REQUEST, Get_Timestamp());
+			Mesh_Send_PING(route.next_hop_destination_id, route.destination_id, my_id, PING_REQUEST, Get_Timestamp());
 		} else
-			Mesh_Send_Data(route.destination_id, route.destination_sequence_number, data, route.next_hop_destination_id, 0, my_id, 0, data_length);
+			Mesh_Send_Data(route.destination_id, data, route.next_hop_destination_id, my_id, data_length);
 	} else {
 #ifdef DEBUG
-		printf("Route is not known. Sending a RREQ packet\n");
+		printf("Route to %d is NOT KNOWN. Sending a RREQ packet and adding the request to the no-route table\n", destination_id);
 #endif
 
 		Generate_RREQ_ID();
-		Mesh_Send_RREQ(destination_id, my_id, my_sequence_number, 0, rreq_id);
-
-#ifdef DEBUG
-		printf("Adding the request to the no-route table\n");
-#endif
+		Mesh_Send_RREQ(destination_id, my_id, Increment_Sequence_Number(), 0, rreq_id);
 		Noroute_Table_Add(destination_id, data, data_length);
 	}
-	return SUCCESS;
 }
 
-bool Noroute_Table_Add(uint16_t destination_id, uint8_t data[], uint8_t data_length) {
+void Noroute_Table_Add(uint16_t destination_id, uint8_t data[], uint8_t data_length) {
 
     if (data_length > MAX_PAYLOAD_SIZE) {
     	printf("Data was too large (%d byte) to be added to no-route table. Max length: %d\n", data_length, MAX_PAYLOAD_SIZE);
-        return FAIL;
+        return;
     }
 
 	noroute_table[noroute_table_entries].destination_id = destination_id;
@@ -118,19 +126,21 @@ bool Noroute_Table_Add(uint16_t destination_id, uint8_t data[], uint8_t data_len
 	noroute_table_entries++;
 	if (noroute_table_entries == NOROUTE_QUEUE_MAX_ENTRIES)
 		noroute_table_entries = 0;
-	return SUCCESS;
 }
 
-bool Mesh_Send_Hello() {
+void Mesh_Send_Hello() {
+#ifdef DEBUG
 	printf("Broadcasting a hello message\n");
-	uint8_t result = Mesh_Send_RREQ(0, my_id, Increment_Sequence_Number(), 0, rreq_id);
-	return result;
+#endif
+	Generate_RREQ_ID();
+	Mesh_Send_RREQ(0, my_id, Increment_Sequence_Number(), 0, rreq_id);
 }
 
 int8_t Route_Exists(uint16_t id) {
 #ifdef DEBUG
 	printf("\tLooking for id = %d in unicast route table\n", id);
 #endif
+	Update_Routes_Expiration();
 	for (int i = 0; i < UNICAST_TABLE_LENGTH; i++) {
 		if (unicast_route_table[i].destination_id == id && unicast_route_table[i].expiration_time > 0) {
 #ifdef DEBUG
@@ -154,26 +164,24 @@ bool RREQ_Table_Contains(uint32_t rreq_id) {
 	return FAIL;
 }
 
-bool RREQ_Table_Append(uint32_t rreq_id) {
+void RREQ_Table_Append(uint32_t rreq_id) {
 	rreq_table[rreq_pointer] = rreq_id;
 	rreq_pointer++;
 	if (rreq_pointer >= RREQ_TABLE_MAX_ENTRIES)
 		rreq_pointer = 0;
-	return SUCCESS;
 }
 
-bool Update_Route_Table(uint16_t dest_id, uint32_t dest_seq_num,
+void Update_Route_Table(uint16_t dest_id, uint32_t dest_seq_num,
 		uint8_t num_hops, uint16_t next_hop) {
 #ifdef DEBUG
 	printf("Checking to see if unicast table should be updated\n");
 #endif
-
 	int8_t source_idx = Route_Exists(dest_id);
 	if (source_idx == -1) {
 #ifdef DEBUG
 		printf("\tSource node not found in table. Adding.\n");
 #endif
-		uint8_t replacement_route = Update_Routes_Expiration();
+		uint8_t replacement_route = Get_Route_To_Replace();
 		unicast_route_table[replacement_route].destination_id = dest_id;
 		unicast_route_table[replacement_route].destination_sequence_number = dest_seq_num;
 		unicast_route_table[replacement_route].hop_count = num_hops;
@@ -203,11 +211,9 @@ bool Update_Route_Table(uint16_t dest_id, uint32_t dest_seq_num,
 #endif
 		}
 	}
-
-	return SUCCESS;
 }
 
-uint8_t Update_Routes_Expiration() { //Also returns id of the least fresh one
+void Update_Routes_Expiration(void) {
 #ifdef DEBUG
 	printf("Updating each route's freshness\n");
 #endif
@@ -218,17 +224,30 @@ uint8_t Update_Routes_Expiration() { //Also returns id of the least fresh one
 	else
 		difference = new_timestamp - previous_timestamp;
 	previous_timestamp = new_timestamp;
+#ifdef DEBUG
+	printf("Amount of time being removed from each node: %" PRIu32 "s\n", difference);
+#endif
+
+	for (int i = 0; i < UNICAST_TABLE_LENGTH && unicast_route_table[i].destination_id != 0; i++) {
+		if (unicast_route_table[i].expiration_time <= difference) //overflow control
+			unicast_route_table[i].expiration_time = 0;
+		else
+			unicast_route_table[i].expiration_time -= difference;
+	}
+}
+
+uint8_t Get_Route_To_Replace(void) {
+#ifdef DEBUG
+	printf("Looking for a route table entry to replace\n");
+#endif
 
 	uint8_t route_idx = 0;
-	uint8_t lowest_freshness = unicast_route_table[0].expiration_time;
+	uint32_t lowest_freshness = unicast_route_table[0].expiration_time;
 
 	for (int i = 0; i < UNICAST_TABLE_LENGTH; i++) {
-		if (unicast_route_table[i].expiration_time <= difference) { //overflow control
-			unicast_route_table[i].expiration_time = 0;
-			route_idx = i;
-			lowest_freshness = 0;
-		} else {
-			unicast_route_table[i].expiration_time = unicast_route_table[i].expiration_time - previous_timestamp;
+		if (unicast_route_table[i].expiration_time == 0)
+			return i;
+		else {
 			if (unicast_route_table[i].expiration_time < lowest_freshness) {
 				route_idx = i;
 				lowest_freshness = unicast_route_table[i].expiration_time;
@@ -236,7 +255,8 @@ uint8_t Update_Routes_Expiration() { //Also returns id of the least fresh one
 		}
 	}
 #ifdef DEBUG
-	printf("Returning route id: %d, time until expiration: %" PRIu32 "\n", route_idx, unicast_route_table[route_idx].expiration_time);
+	printf("Returning route id: %d, time until expiration: %" PRIu32 "\n",
+			route_idx, unicast_route_table[route_idx].expiration_time);
 #endif
 
 	return route_idx;
@@ -244,13 +264,15 @@ uint8_t Update_Routes_Expiration() { //Also returns id of the least fresh one
 
 void Generate_RREQ_ID(void) {
 	HAL_RTC_GetTime(Mesh_RTC, &currentTime, RTC_FORMAT_BIN);
-	HAL_RTC_GetDate(Mesh_RTC, &currentDate, RTC_FORMAT_BIN);
 
-//	init_rng(currentTime.Seconds, currentTime.Minutes * 60, currentTime.SubSeconds);
 	rreq_id = Get_Rand(currentTime.Seconds + currentTime.Minutes * 60 + currentTime.SubSeconds);
 }
 
-uint8_t Increment_Sequence_Number(void) {
+uint32_t Get_Sequence_Number(void) {
+	return my_sequence_number;
+}
+
+uint32_t Increment_Sequence_Number(void) {
 	return ++my_sequence_number;
 }
 

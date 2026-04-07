@@ -109,7 +109,7 @@ void LoRa_ModeSelect(enum Mode mode);
 void LoRa_WriteAUXToLED(void);
 void LoRa_ReadRegister(uint8_t starting_address, uint8_t length);
 void LoRa_WriteRegister(uint8_t address, uint8_t length, uint8_t parameter);
-bool LoRa_SendData(uint8_t *buffer, uint8_t buffer_size);
+void LoRa_SendData(uint8_t *buffer, uint8_t buffer_size);
 void LoRa_ReadProductInfo(void);
 void LoRa_ResetFirmware(void);
 
