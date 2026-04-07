@@ -13,7 +13,8 @@
 RTC_TimeTypeDef currentTime;
 RTC_DateTypeDef currentDate;
 
-static uint32_t previous_timestamp = 0;
+static uint8_t route_table_entries = 0;
+static uint8_t rreq_table_entries = 0;
 
 static uint8_t tx_buffer[TX_SIZE] = { 0 };
 static uint8_t tx_byte;
@@ -21,11 +22,10 @@ static uint8_t tx_index = 0;
 
 static uint32_t my_sequence_number;
 static uint32_t rreq_id;
-struct unicast_route_table_entry unicast_route_table[UNICAST_TABLE_LENGTH];
-struct noroute_table_entry noroute_table[NOROUTE_QUEUE_MAX_ENTRIES];
-uint8_t noroute_table_entries;
-static uint32_t rreq_table[RREQ_TABLE_MAX_ENTRIES];
-static uint8_t rreq_pointer;
+struct route_table_entry routing_table[ROUTING_TABLE_LENGTH];
+struct pending_message pending_messages_table[PENDING_MESSAGES_TABLE_MAX_ENTRIES];
+uint8_t pending_messages_table_entries;
+static struct rreq_table_entry rreq_table[RREQ_TABLE_MAX_ENTRIES];
 
 // AODV
 // No periodic beaconing
@@ -91,17 +91,14 @@ void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 
 	int8_t route_idx = Route_Exists(destination_id);
 	if (route_idx != -1) {
-		struct unicast_route_table_entry route;
-		route = unicast_route_table[route_idx];
-
 #ifdef DEBUG
-		printf("Route to %d is known. N of hops: %d\n", destination_id, route.hop_count);
+		printf("Route to %d is known. N of hops: %d\n", destination_id, routing_table[route_idx].hop_count);
 #endif
 
 		if (isPing) {
-			Mesh_Send_PING(route.next_hop_destination_id, route.destination_id, my_id, PING_REQUEST, Get_Timestamp());
+			Mesh_Send_PING(routing_table[route_idx].next_hop_destination_id, routing_table[route_idx].destination_id, my_id, PING_REQUEST, Get_Timestamp());
 		} else
-			Mesh_Send_Data(route.destination_id, data, route.next_hop_destination_id, my_id, data_length);
+			Mesh_Send_Data(routing_table[route_idx].destination_id, data, routing_table[route_idx].next_hop_destination_id, my_id, data_length);
 	} else {
 #ifdef DEBUG
 		printf("Route to %d is NOT KNOWN. Sending a RREQ packet and adding the request to the no-route table\n", destination_id);
@@ -120,12 +117,12 @@ void Noroute_Table_Add(uint16_t destination_id, uint8_t data[], uint8_t data_len
         return;
     }
 
-	noroute_table[noroute_table_entries].destination_id = destination_id;
-	memcpy(noroute_table[noroute_table_entries].data, data, data_length);
-	noroute_table[noroute_table_entries].data_length = data_length;
-	noroute_table_entries++;
-	if (noroute_table_entries == NOROUTE_QUEUE_MAX_ENTRIES)
-		noroute_table_entries = 0;
+	pending_messages_table[pending_messages_table_entries].destination_id = destination_id;
+	memcpy(pending_messages_table[pending_messages_table_entries].data, data, data_length);
+	pending_messages_table[pending_messages_table_entries].data_length = data_length;
+	pending_messages_table_entries++;
+	if (pending_messages_table_entries == PENDING_MESSAGES_TABLE_MAX_ENTRIES)
+		pending_messages_table_entries = 0;
 }
 
 void Mesh_Send_Hello() {
@@ -141,10 +138,10 @@ int8_t Route_Exists(uint16_t id) {
 	printf("\tLooking for id = %d in unicast route table\n", id);
 #endif
 	Update_Routes_Expiration();
-	for (int i = 0; i < UNICAST_TABLE_LENGTH; i++) {
-		if (unicast_route_table[i].destination_id == id && unicast_route_table[i].expiration_time > 0) {
+	for (int i = 0; i < ROUTING_TABLE_LENGTH; i++) {
+		if (routing_table[i].destination_id == id && routing_table[i].expiration_time > 0) {
 #ifdef DEBUG
-			printf("\tFound entry for id=%d, next node is %d\n", unicast_route_table[i].destination_id, unicast_route_table[i].next_hop_destination_id);
+			printf("\tFound entry for id=%d, next node is %d\n", routing_table[i].destination_id, routing_table[i].next_hop_destination_id);
 #endif
 			return i;
 		}
@@ -152,9 +149,12 @@ int8_t Route_Exists(uint16_t id) {
 	return -1;
 }
 
-bool RREQ_Table_Contains(uint32_t rreq_id) {
-	for (uint8_t i = 0; i < RREQ_TABLE_MAX_ENTRIES; i++) {
-		if (rreq_table[i] == rreq_id) {
+bool RREQ_Table_Contains(uint16_t source_id, uint32_t rreq_id) {
+	Update_RREQ_Expiration();
+
+	for (uint8_t i = 0; i < rreq_table_entries; i++) {
+		if (rreq_table[i].source_id == source_id
+				&& rreq_table[i].rreq_id == rreq_id) {
 #ifdef DEBUG
 			printf("RREQ Already Seen\n");
 #endif
@@ -164,11 +164,35 @@ bool RREQ_Table_Contains(uint32_t rreq_id) {
 	return FAIL;
 }
 
-void RREQ_Table_Append(uint32_t rreq_id) {
-	rreq_table[rreq_pointer] = rreq_id;
-	rreq_pointer++;
-	if (rreq_pointer >= RREQ_TABLE_MAX_ENTRIES)
-		rreq_pointer = 0;
+void RREQ_Table_Append(uint16_t source_id, uint32_t rreq_id) {
+	if (rreq_table_entries >= RREQ_TABLE_MAX_ENTRIES)
+		rreq_table_entries = 0;
+
+	rreq_table[rreq_table_entries].source_id = source_id;
+	rreq_table[rreq_table_entries].rreq_id = rreq_id;
+	rreq_table[rreq_table_entries].expiration_time = Get_Timestamp() + (DEFAULT_RREQ_EXPIRATION_TIME * 1000);
+	rreq_table_entries++;
+}
+
+void Update_RREQ_Expiration(void) {
+#ifdef DEBUG
+	printf("Updating each RREQ's freshness\n");
+#endif
+	uint32_t current_time = Get_Timestamp();
+	uint8_t write_idx = 0;
+
+	for (uint8_t read_idx = 0; read_idx < rreq_table_entries; read_idx++) {
+		if (rreq_table[read_idx].expiration_time > current_time) {
+#ifdef DEBUG
+			printf("Current time: %" PRIu32 ", RREQ ID %" PRIu32 " from Node ID %d expires in %" PRIu32 " s\n",
+					current_time / 1000, rreq_table[read_idx].rreq_id, rreq_table[read_idx].source_id, (rreq_table[read_idx].expiration_time - current_time) / 1000);
+#endif
+			rreq_table[write_idx] = rreq_table[read_idx];
+			write_idx++;
+		}
+		//Skip
+	}
+	rreq_table_entries = write_idx;
 }
 
 void Update_Route_Table(uint16_t dest_id, uint32_t dest_seq_num,
@@ -176,19 +200,26 @@ void Update_Route_Table(uint16_t dest_id, uint32_t dest_seq_num,
 #ifdef DEBUG
 	printf("Checking to see if unicast table should be updated\n");
 #endif
+	if (dest_id == 0x0000) // Reserved for Hello packets
+		return;
+
 	int8_t source_idx = Route_Exists(dest_id);
 	if (source_idx == -1) {
 #ifdef DEBUG
 		printf("\tSource node not found in table. Adding.\n");
 #endif
-		uint8_t replacement_route = Get_Route_To_Replace();
-		unicast_route_table[replacement_route].destination_id = dest_id;
-		unicast_route_table[replacement_route].destination_sequence_number = dest_seq_num;
-		unicast_route_table[replacement_route].hop_count = num_hops;
-		unicast_route_table[replacement_route].next_hop_destination_id = next_hop;
-		unicast_route_table[replacement_route].expiration_time = DEFAULT_ROUTE_EXPIRATION_TIME;
+
+		if (route_table_entries >= ROUTING_TABLE_LENGTH)
+			rreq_table_entries = 0;
+
+		routing_table[route_table_entries].destination_id = dest_id;
+		routing_table[route_table_entries].destination_sequence_number = dest_seq_num;
+		routing_table[route_table_entries].hop_count = num_hops;
+		routing_table[route_table_entries].next_hop_destination_id = next_hop;
+		routing_table[route_table_entries].expiration_time = Get_Timestamp() + (DEFAULT_ROUTE_EXPIRATION_TIME * 1000);
+		route_table_entries++;
 	} else {
-		struct unicast_route_table_entry *existing_route = &unicast_route_table[source_idx];
+		struct route_table_entry *existing_route = &routing_table[source_idx];
 
 		if (Is_Fresher_Route(dest_seq_num, existing_route->destination_sequence_number)) {
 #ifdef DEBUG
@@ -217,49 +248,22 @@ void Update_Routes_Expiration(void) {
 #ifdef DEBUG
 	printf("Updating each route's freshness\n");
 #endif
-	uint32_t new_timestamp = Get_Timestamp() / 1000;
-	uint32_t difference = 0;
-	if (new_timestamp < previous_timestamp) //overflow control
-		difference = new_timestamp;
-	else
-		difference = new_timestamp - previous_timestamp;
-	previous_timestamp = new_timestamp;
+	uint32_t current_time = Get_Timestamp();
+	uint8_t write_idx = 0;
+
+	for (uint8_t read_idx = 0; read_idx < route_table_entries; read_idx++) {
+		if (routing_table[read_idx].expiration_time > current_time) {
 #ifdef DEBUG
-	printf("Amount of time being removed from each node: %" PRIu32 "s\n", difference);
+			printf("Current time: %" PRIu32 ", route to %d expires in %" PRIu32 " s\n",
+					current_time / 1000, routing_table[read_idx].destination_id, (routing_table[read_idx].expiration_time - current_time) / 1000);
 #endif
-
-	for (int i = 0; i < UNICAST_TABLE_LENGTH && unicast_route_table[i].destination_id != 0; i++) {
-		if (unicast_route_table[i].expiration_time <= difference) //overflow control
-			unicast_route_table[i].expiration_time = 0;
-		else
-			unicast_route_table[i].expiration_time -= difference;
-	}
-}
-
-uint8_t Get_Route_To_Replace(void) {
-#ifdef DEBUG
-	printf("Looking for a route table entry to replace\n");
-#endif
-
-	uint8_t route_idx = 0;
-	uint32_t lowest_freshness = unicast_route_table[0].expiration_time;
-
-	for (int i = 0; i < UNICAST_TABLE_LENGTH; i++) {
-		if (unicast_route_table[i].expiration_time == 0)
-			return i;
-		else {
-			if (unicast_route_table[i].expiration_time < lowest_freshness) {
-				route_idx = i;
-				lowest_freshness = unicast_route_table[i].expiration_time;
-			}
+			routing_table[write_idx] = routing_table[read_idx];
+			write_idx++;
 		}
+		//Skip
 	}
-#ifdef DEBUG
-	printf("Returning route id: %d, time until expiration: %" PRIu32 "\n",
-			route_idx, unicast_route_table[route_idx].expiration_time);
-#endif
 
-	return route_idx;
+	route_table_entries = write_idx;
 }
 
 void Generate_RREQ_ID(void) {
