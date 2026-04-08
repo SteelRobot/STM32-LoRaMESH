@@ -6,7 +6,7 @@
 #define ROUTING_TABLE_LENGTH 16
 #define PENDING_MESSAGES_TABLE_MAX_ENTRIES 5
 #define RREQ_TABLE_MAX_ENTRIES 10
-#define DEFAULT_ROUTE_EXPIRATION_TIME 5 // Seconds
+#define DEFAULT_ROUTE_EXPIRATION_TIME 600 // Seconds
 #define DEFAULT_RREQ_EXPIRATION_TIME 10 // Seconds
 #define MAX_PAYLOAD_SIZE 1024
 
@@ -20,8 +20,8 @@ struct route_table_entry {
 
 struct pending_message {
 	uint16_t destination_id;
-	uint8_t data[MAX_PAYLOAD_SIZE];
 	uint8_t data_length;
+	uint8_t data[MAX_PAYLOAD_SIZE];
 };
 
 struct rreq_table_entry {

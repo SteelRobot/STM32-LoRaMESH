@@ -96,7 +96,7 @@ void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 #endif
 
 		if (isPing) {
-			Mesh_Send_PING(routing_table[route_idx].next_hop_destination_id, routing_table[route_idx].destination_id, my_id, PING_REQUEST, Get_Timestamp());
+			Mesh_Send_Ping(routing_table[route_idx].next_hop_destination_id, routing_table[route_idx].destination_id, my_id, PING_REQUEST, Get_Timestamp());
 		} else
 			Mesh_Send_Data(routing_table[route_idx].destination_id, data, routing_table[route_idx].next_hop_destination_id, my_id, data_length);
 	} else {
@@ -281,7 +281,7 @@ uint32_t Increment_Sequence_Number(void) {
 }
 
 bool Is_Fresher_Route(uint32_t new_seq, uint32_t old_seq) {
-	return (int32_t) (new_seq - old_seq) > 0;
+	return (int32_t)(new_seq - old_seq) >= 0;
 }
 
 // UART Interrupt to receive data from LoRa module, and to send your own data from keyboard
