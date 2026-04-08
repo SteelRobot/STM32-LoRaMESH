@@ -142,7 +142,7 @@ void Mesh_Send_RERR(uint16_t receiver_id, uint16_t source_id, uint8_t num_hops) 
 	offset = 0;
 }
 
-void Mesh_Send_PING(uint16_t receiver_id, uint16_t destination_id, uint16_t source_id, uint8_t request_or_reply, uint32_t timestamp_ms) {
+void Mesh_Send_Ping(uint16_t receiver_id, uint16_t destination_id, uint16_t source_id, uint8_t request_or_reply, uint32_t timestamp_ms) {
 
 #ifdef DEBUG
 	printf("Building a PING Packet\n");
@@ -168,7 +168,7 @@ void Mesh_Send_PING(uint16_t receiver_id, uint16_t destination_id, uint16_t sour
 	packet_arr[1] = receiver_id & 0xFF;
 	packet_arr[2] = my_channel;
 
-	Format_Packet_PING(tosend, packet_arr + LORA_OFFSET);
+	Format_Packet_Ping(tosend, packet_arr + LORA_OFFSET);
 	LoRa_SendData(packet_arr, PING_PKT_LEN);
 	offset = 0;
 }
@@ -299,7 +299,7 @@ void Format_Packet_RERR(struct rerr_packet packet, uint8_t packet_arr[]) {
 	offset = 0;
 }
 
-void Format_Packet_PING(struct ping_packet packet, uint8_t packet_arr[]) {
+void Format_Packet_Ping(struct ping_packet packet, uint8_t packet_arr[]) {
 	offset = 0;
 
 	Write_uint8(packet_arr, PING_PACKET);
@@ -450,7 +450,7 @@ struct rerr_packet Unpack_Packet_RERR(uint8_t parr[]) {
 		return packet;
 }
 
-struct ping_packet Unpack_Packet_PING(uint8_t parr[]) {
+struct ping_packet Unpack_Packet_Ping(uint8_t parr[]) {
 	offset = 0;
 
 	struct ping_packet packet;
@@ -559,9 +559,7 @@ void Receive_Packet_Handler_RREQ(uint8_t packet_data[], uint8_t plength) {
 		return;
 	}
 	int8_t route_idx = Route_Exists(pkt.destination_id);
-	if (route_idx != -1
-			&& routing_table[route_idx].destination_sequence_number
-					>= pkt.destination_sequence_number) {
+	if (route_idx != -1 && Is_Fresher_Route(routing_table[route_idx].destination_sequence_number, pkt.destination_sequence_number)) {
 #ifdef DEBUG
 		printf("Sending reply back to %d by the info from my routing table\n",
 				pkt.source_id);
@@ -592,8 +590,6 @@ void Receive_Packet_Handler_RREP(uint8_t packet_data[], uint8_t plength) {
 
 	Update_Route_Table(pkt.source_id, pkt.destination_sequence_number, pkt.num_hops, pkt.transmitter_id);
 
-
-
 	if (pkt.destination_id == my_id) {
 #ifdef DEBUG
 		printf("RREP for me\n");
@@ -608,7 +604,7 @@ void Receive_Packet_Handler_RREP(uint8_t packet_data[], uint8_t plength) {
 						pkt.transmitter_id, my_id, pending_messages_table[i].data_length);
 #endif
 				if (pending_messages_table[i].data_length == 4 && memcmp(pending_messages_table[i].data, "ping", 4) == 0) {
-					Mesh_Send_PING(pkt.transmitter_id, pending_messages_table[i].destination_id, my_id, PING_REQUEST, Get_Timestamp());
+					Mesh_Send_Ping(pkt.transmitter_id, pending_messages_table[i].destination_id, my_id, PING_REQUEST, Get_Timestamp());
 				} else {
 					Mesh_Send_Data(pending_messages_table[i].destination_id, pending_messages_table[i].data, pkt.transmitter_id, my_id, pending_messages_table[i].data_length);
 				}
@@ -622,6 +618,7 @@ void Receive_Packet_Handler_RREP(uint8_t packet_data[], uint8_t plength) {
 				pkt.destination_id, pkt.source_id, pkt.num_hops + 1,
 				pkt.destination_sequence_number);
 		}
+		// In case we didn't receive a RREQ, but we know that transmitter did - therefore transmitter knows how to get to the destination
 		Update_Route_Table(pkt.destination_id, pkt.destination_sequence_number, pkt.num_hops + 1, pkt.transmitter_id);
 	}
 }
@@ -633,7 +630,7 @@ void Receive_Packet_Handler_RERR(uint8_t packet_data[], uint8_t plength) {
 	for (uint8_t i = 0; i < pkt.num_unreachable_dests; i++) {
 		uint16_t dest_id = pkt.unreachable_dests[i].destination_id;
 		int8_t route_idx = Route_Exists(dest_id);
-		if (route_idx != -1 && pkt.unreachable_dests[i].destination_sequence_number >= routing_table[route_idx].destination_sequence_number && routing_table[route_idx].next_hop_destination_id == pkt.transmitter_id)
+		if (route_idx != -1 && Is_Fresher_Route(pkt.unreachable_dests[i].destination_sequence_number, routing_table[route_idx].destination_sequence_number) && routing_table[route_idx].next_hop_destination_id == pkt.transmitter_id)
 			routing_table[route_idx].expiration_time = 0;
 		// Forward RERR to precursors of this destination
 	}
@@ -654,16 +651,15 @@ void Receive_Packet_Handler_Data(uint8_t packet_data[], uint8_t plength) {
 					pkt.source_id, pkt.data_length);
 		}
 	}
-	Update_Route_Table(pkt.transmitter_id, 0, 0, pkt.transmitter_id);
 }
 
 void Receive_Packet_Handler_Ping(uint8_t packet_data[], uint8_t plength) {
 	volatile struct ping_packet pkt;
-	pkt = Unpack_Packet_PING(packet_data);
+	pkt = Unpack_Packet_Ping(packet_data);
 
 	if (pkt.destination_id == my_id) {
 		if (pkt.request_or_reply == PING_REQUEST) {
-			Mesh_Send_PING(pkt.transmitter_id, pkt.source_id, pkt.destination_id, PING_REPLY, pkt.timestamp_ms);
+			Mesh_Send_Ping(pkt.transmitter_id, pkt.source_id, pkt.destination_id, PING_REPLY, pkt.timestamp_ms);
 		} else {
 			printf("Received ping reply from node id:%d\n", pkt.source_id);
 			printf("Latency: %" PRIu32 "ms\n", Get_Timestamp() - pkt.timestamp_ms);
@@ -673,7 +669,7 @@ void Receive_Packet_Handler_Ping(uint8_t packet_data[], uint8_t plength) {
 		int8_t route_idx = Route_Exists(pkt.destination_id);
 
 		if (route_idx != -1) {
-			Mesh_Send_PING(routing_table[route_idx].next_hop_destination_id, routing_table[route_idx].destination_id, pkt.source_id, pkt.request_or_reply, pkt.timestamp_ms);
+			Mesh_Send_Ping(routing_table[route_idx].next_hop_destination_id, routing_table[route_idx].destination_id, pkt.source_id, pkt.request_or_reply, pkt.timestamp_ms);
 		}
 	}
 
