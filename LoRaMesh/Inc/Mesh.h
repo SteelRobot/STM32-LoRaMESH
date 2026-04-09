@@ -33,6 +33,7 @@ struct rreq_table_entry {
 extern struct route_table_entry routing_table[ROUTING_TABLE_LENGTH];
 extern struct pending_message pending_messages_table[PENDING_MESSAGES_TABLE_MAX_ENTRIES];
 extern uint8_t pending_messages_table_entries;
+extern uint8_t route_table_entries;
 extern RTC_TimeTypeDef currentTime;
 extern RTC_DateTypeDef currentDate;
 
