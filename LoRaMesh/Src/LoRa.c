@@ -82,18 +82,18 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 
 	LoRa_Set_SerialPortRate(SPR_9600);
 	LoRa_Set_SerialParityBit(SPB_8N1);
-	LoRa_Set_AirDataRate(ADR_62_5K);
+	LoRa_Set_AirDataRate(ADR_0_3K);
 
 	LoRa_Set_SubPacketSetting(SPS_240);
 	LoRa_Set_RSSIAmbientNoise(false);
-	LoRa_Set_TransmittingPower(TP_10DBM);
+	LoRa_Set_TransmittingPower(TP_22DBM);
 
 	LoRa_Set_Channel(19);
 
 	LoRa_Set_RSSIEnable(false);
 	LoRa_Set_TransmissionMode(TM_FIXED_POINT);
 	LoRa_Set_ReplyEnable(false);
-	LoRa_Set_LBTEnable(false);
+	LoRa_Set_LBTEnable(true);
 	LoRa_Set_WORTransceiverControl(WOR_RECEIVER);
 	LoRa_Set_WORCycle(CYCLE_2000MS);
 #endif
@@ -117,7 +117,7 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 
 	printf("Init done.\n");
 
-	printf("\t\t\t\tDEBUG: Time initialize LoRa: %" PRIu32 "ms\n", DEBUG_End_Timing(DEBUG_lora_init_timestamp));
+	printf("[T] \t\t\t\tDEBUG: Time initialize LoRa: %" PRIu32 "ms\n", DEBUG_End_Timing(DEBUG_lora_init_timestamp));
 #endif
 }
 
@@ -326,7 +326,7 @@ void LoRa_SendData(uint8_t *buffer, uint8_t buffer_size) {
 	HAL_UART_Transmit(LoRa_UART, buffer, buffer_size, SLEEP_TIME);
 #ifdef DEBUG
 	if (DEBUG_receive_to_send_flag)
-		printf("\t\t\t\tDEBUG: Time between receiving a packet and sending a reply: %" PRIu32 "ms\n", DEBUG_End_Timing(DEBUG_receive_to_send_timestamp));
+		printf("[T] \t\t\t\tDEBUG: Time between receiving a packet and sending a reply: %" PRIu32 "ms\n", DEBUG_End_Timing(DEBUG_receive_to_send_timestamp));
 	DEBUG_receive_to_send_flag = false;
 #endif
 }

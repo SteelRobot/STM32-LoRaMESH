@@ -13,7 +13,7 @@
 RTC_TimeTypeDef currentTime;
 RTC_DateTypeDef currentDate;
 
-static uint8_t route_table_entries = 0;
+uint8_t route_table_entries = 0;
 static uint8_t rreq_table_entries = 0;
 
 static uint8_t tx_buffer[TX_SIZE] = { 0 };
@@ -52,7 +52,7 @@ void Mesh_Init() {
 #endif
 	Mesh_Send_Hello();
 #ifdef DEBUG
-	printf("\t\t\t\tDEBUG: Time to run Mesh_Init(): %" PRIu32 "ms\n", DEBUG_End_Timing(DEBUG_mesh_init_timestamp));
+	printf("[T]\t\t\t\tDEBUG: Time to run Mesh_Init(): %" PRIu32 "ms\n", DEBUG_End_Timing(DEBUG_mesh_init_timestamp));
 #endif
 }
 
@@ -184,8 +184,8 @@ void Update_RREQ_Expiration(void) {
 	for (uint8_t read_idx = 0; read_idx < rreq_table_entries; read_idx++) {
 		if (rreq_table[read_idx].expiration_time > current_time) {
 #ifdef DEBUG
-			printf("Current time: %" PRIu32 ", RREQ ID %" PRIu32 " from Node ID %d expires in %" PRIu32 " s\n",
-					current_time / 1000, rreq_table[read_idx].rreq_id, rreq_table[read_idx].source_id, (rreq_table[read_idx].expiration_time - current_time) / 1000);
+			printf("RREQ ID %" PRIu32 " from Node ID %d expires in %" PRIu32 " s\n",
+					rreq_table[read_idx].rreq_id, rreq_table[read_idx].source_id, (rreq_table[read_idx].expiration_time - current_time) / 1000);
 #endif
 			rreq_table[write_idx] = rreq_table[read_idx];
 			write_idx++;
@@ -254,8 +254,8 @@ void Update_Routes_Expiration(void) {
 	for (uint8_t read_idx = 0; read_idx < route_table_entries; read_idx++) {
 		if (routing_table[read_idx].expiration_time > current_time) {
 #ifdef DEBUG
-			printf("Current time: %" PRIu32 ", route to %d expires in %" PRIu32 " s\n",
-					current_time / 1000, routing_table[read_idx].destination_id, (routing_table[read_idx].expiration_time - current_time) / 1000);
+			printf("Route to %d expires in %" PRIu32 " s\n",
+					routing_table[read_idx].destination_id, (routing_table[read_idx].expiration_time - current_time) / 1000);
 #endif
 			routing_table[write_idx] = routing_table[read_idx];
 			write_idx++;

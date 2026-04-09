@@ -29,7 +29,7 @@ void Mesh_Send_Data(uint16_t destination_id,
 	tosend.data_length = data_length;
 
 #ifdef DEBUG
-	printf("\tdata_length=%d\n\treceiver_id=%d\n\tdestination_id=%d\n\tsource_id=%d\n",
+	printf("\tdata_length=%d receiver_id=%d destination_id=%d source_id=%d\n",
 			data_length, receiver_id,
 			destination_id, source_id);
 #endif
@@ -63,7 +63,7 @@ void Mesh_Send_RREQ(uint16_t destination_id, uint16_t source_id,
 	tosend.rreq_id = rreq_id;
 
 #ifdef DEBUG
-	printf("\tnum_hops=%d\n\ttransmitter_id=%d\n\tdestination_id=%d\n\tsource_id=%d\n", num_hops, my_id, destination_id, source_id);
+	printf("\tnum_hops=%d transmitter_id=%d destination_id=%d source_id=%d\n", num_hops, my_id, destination_id, source_id);
 #endif
 
 	RREQ_Table_Append(source_id, rreq_id);
@@ -96,7 +96,7 @@ void Mesh_Send_RREP(uint16_t receiver_id, uint16_t destination_id, uint16_t sour
 	tosend.destination_sequence_number = dest_seq_num;
 
 #ifdef DEBUG
-	printf("\tnum_hops=%d\n\treceiver_id=%d\n\tdestination_id=%d\n\tsource_id=%d\n", num_hops, receiver_id, destination_id, source_id);
+	printf("\tnum_hops=%d receiver_id=%d destination_id=%d source_id=%d\n", num_hops, receiver_id, destination_id, source_id);
 #endif
 
 	uint8_t packet_arr[RREP_PKT_LEN];
@@ -159,7 +159,7 @@ void Mesh_Send_Ping(uint16_t receiver_id, uint16_t destination_id, uint16_t sour
 	tosend.timestamp_ms = timestamp_ms;
 
 #ifdef DEBUG
-	printf("\treceiver_id=%d\n\tdestination_id=%d\n\tsource_id=%d\n", receiver_id, destination_id, source_id);
+	printf("\treceiver_id=%d destination_id=%d source_id=%d\n", receiver_id, destination_id, source_id);
 #endif
 
 	uint8_t packet_arr[PING_PKT_LEN];
@@ -347,7 +347,7 @@ struct data_packet Unpack_Packet_Data(uint8_t parr[], uint8_t data_length,
 #ifdef DEBUG
 	printf("\tData packet with:\n");
 	printf(
-			"\ttransmitter_id=%d\n\treceiver_id=%d\n\tdestination_id=%d\n\tsource_id=%d\n",
+			"\ttransmitter_id=%d receiver_id=%d destination_id=%d source_id=%d\n",
 			packet.transmitter_id, packet.receiver_id,
 			packet.destination_id, packet.source_id);
 #endif
@@ -379,7 +379,7 @@ struct rreq_packet Unpack_Packet_RREQ(uint8_t parr[]) {
 #ifdef DEBUG
 	printf("\tRREQ packet with:\n");
 	printf(
-			"\tnum_hops = %d\n\ttransmitter_id=%d\n\trreq_id=%" PRIu32 "\n\tdestination_id=%d\n\tsource_id=%d\n",
+			"\tnum_hops = %d transmitter_id=%d rreq_id=%" PRIu32 " destination_id=%d source_id=%d\n",
 			packet.num_hops, packet.transmitter_id, packet.rreq_id,
 			packet.destination_id, packet.source_id);
 #endif
@@ -412,7 +412,7 @@ struct rrep_packet Unpack_Packet_RREP(uint8_t parr[]) {
 #ifdef DEBUG
 	printf("\tRREP packet with:\n");
 	printf(
-			"\tnum_hops = %d\n\ttransmitter_id=%d\n\treceiver_id=%d\n\tdestination_id=%d\n\tsource_id=%d\n",
+			"\tnum_hops = %d transmitter_id=%d receiver_id=%d destination_id=%d source_id=%d\n",
 			packet.num_hops, packet.transmitter_id, packet.receiver_id,
 			packet.destination_id, packet.source_id);
 #endif
@@ -444,7 +444,7 @@ struct rerr_packet Unpack_Packet_RERR(uint8_t parr[]) {
 	#ifdef DEBUG
 		printf("\tRERR packet with:\n");
 		printf(
-				"\ttransmitter_id=%d\n\tnum_unreachable_hosts=%d\n",
+				"\ttransmitter_id=%d num_unreachable_hosts=%d\n",
 				packet.transmitter_id, packet.num_unreachable_dests);
 	#endif
 		return packet;
@@ -474,7 +474,7 @@ struct ping_packet Unpack_Packet_Ping(uint8_t parr[]) {
 #ifdef DEBUG
 	printf("\tPING packet with:\n");
 	printf(
-			"\ttransmitter_id=%d\n\treceiver_id=%d\n\tdestination_id=%d\n\tsource_id=%d\n\trequest_or_reply:%d\n",
+			"\ttransmitter_id=%d receiver_id=%d destination_id=%d source_id=%d request_or_reply:%d\n",
 			packet.transmitter_id, packet.receiver_id,
 			packet.destination_id, packet.source_id, packet.request_or_reply);
 #endif
@@ -547,6 +547,11 @@ void Receive_Packet_Handler_RREQ(uint8_t packet_data[], uint8_t plength) {
 #endif
 	RREQ_Table_Append(pkt.source_id, pkt.rreq_id);
 
+	if (pkt.destination_id == 0) {
+		printf("Received a Hello packet from node %d\n", pkt.source_id);
+		Receive_Packet_Handler_Hello(pkt.source_id);
+	}
+
 	Update_Route_Table(pkt.source_id, pkt.source_sequence_number, pkt.num_hops, pkt.transmitter_id);
 
 	if (pkt.destination_id == my_id) {
@@ -575,13 +580,22 @@ void Receive_Packet_Handler_RREQ(uint8_t packet_data[], uint8_t plength) {
 	Mesh_Send_RREQ(pkt.destination_id, pkt.source_id,
 			pkt.source_sequence_number, pkt.num_hops + 1, pkt.rreq_id);
 
-
-	if (pkt.destination_id == 0) {
-		printf("Received a Hello packet from node %d\n", pkt.source_id);
-	}
-
 	if (pkt.source_id != my_id)
 		Update_Route_Table(pkt.transmitter_id, 0, 0, pkt.transmitter_id);
+}
+
+void Receive_Packet_Handler_Hello(uint16_t source_id) {
+	for (uint8_t i = 0; i < route_table_entries; i++) {
+		if (routing_table[i].next_hop_destination_id == source_id || routing_table[i].destination_id == source_id) {
+			routing_table[i].expiration_time = 0;
+			routing_table[i].destination_sequence_number = 0;
+#ifdef DEBUG
+			printf(" Invalidated route to ID %d through next-hop ID %d New TTL = %" PRIu32 " New sequence number = %" PRIu32 "\n",
+					routing_table[i].destination_id, routing_table[i].next_hop_destination_id,
+					routing_table[i].expiration_time, routing_table[i].destination_sequence_number);
+#endif
+		}
+	}
 }
 
 void Receive_Packet_Handler_RREP(uint8_t packet_data[], uint8_t plength) {
@@ -599,7 +613,7 @@ void Receive_Packet_Handler_RREP(uint8_t packet_data[], uint8_t plength) {
 			if (pending_messages_table[i].destination_id == pkt.source_id) {
 #ifdef DEBUG
 				printf("Found a matching entry in the noroute table\n");
-				printf("\tdestination_id=%d\n\treceiver_id=%d\n\ttransmitter_id=%d\n\tdata_length=%d\n",
+				printf("\tdestination_id=%d receiver_id=%d transmitter_id=%d data_length=%d\n",
 						pending_messages_table[i].destination_id,
 						pkt.transmitter_id, my_id, pending_messages_table[i].data_length);
 #endif
@@ -661,8 +675,7 @@ void Receive_Packet_Handler_Ping(uint8_t packet_data[], uint8_t plength) {
 		if (pkt.request_or_reply == PING_REQUEST) {
 			Mesh_Send_Ping(pkt.transmitter_id, pkt.source_id, pkt.destination_id, PING_REPLY, pkt.timestamp_ms);
 		} else {
-			printf("Received ping reply from node id:%d\n", pkt.source_id);
-			printf("Latency: %" PRIu32 "ms\n", Get_Timestamp() - pkt.timestamp_ms);
+			printf("[T] Received ping reply from node id:%d. Latency: %" PRIu32 "ms\n", pkt.source_id, Get_Timestamp() - pkt.timestamp_ms);
 			return;
 		}
 	} else {

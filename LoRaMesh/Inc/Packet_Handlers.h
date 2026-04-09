@@ -20,6 +20,7 @@ struct rerr_packet Unpack_Packet_RERR(uint8_t parr[]);
 struct ping_packet Unpack_Packet_Ping(uint8_t parr[]);
 void Receive_Packet_Handler(uint8_t packet_data[], uint8_t plength, uint8_t ptype);
 void Receive_Packet_Handler_RREQ(uint8_t packet_data[], uint8_t plength);
+void Receive_Packet_Handler_Hello(uint16_t source_id);
 void Receive_Packet_Handler_RREP(uint8_t packet_data[], uint8_t plength);
 void Receive_Packet_Handler_RERR(uint8_t packet_data[], uint8_t plength);
 void Receive_Packet_Handler_Data(uint8_t packet_data[], uint8_t plength);
