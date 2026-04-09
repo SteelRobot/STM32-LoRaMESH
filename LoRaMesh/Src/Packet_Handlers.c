@@ -44,7 +44,7 @@ void Mesh_Send_Data(uint16_t destination_id,
 	offset = 0;
 }
 
-void Mesh_Send_RREQ(uint16_t destination_id, uint16_t source_id,
+void Mesh_Send_RREQ(uint16_t destination_id, uint32_t destination_sequence_number, uint16_t source_id,
 		uint32_t source_sequence_number, uint8_t num_hops, uint32_t rreq_id) {
 
 #ifdef DEBUG
@@ -60,6 +60,7 @@ void Mesh_Send_RREQ(uint16_t destination_id, uint16_t source_id,
 	tosend.source_id = source_id;
 	tosend.num_hops = num_hops;
 	tosend.source_sequence_number = source_sequence_number;
+	tosend.destination_sequence_number = destination_sequence_number;
 	tosend.rreq_id = rreq_id;
 
 #ifdef DEBUG
@@ -79,8 +80,7 @@ void Mesh_Send_RREQ(uint16_t destination_id, uint16_t source_id,
 	offset = 0;
 }
 
-void Mesh_Send_RREP(uint16_t receiver_id, uint16_t destination_id, uint16_t source_id, uint8_t num_hops, uint32_t dest_seq_num) {
-
+void Mesh_Send_RREP(uint16_t next_hop_to_source, uint16_t rreq_source_id, uint16_t responder_id, uint8_t num_hops, uint32_t responder_sequence_number) {
 #ifdef DEBUG
 	printf("Building an RREP Packet\n");
 #endif
@@ -89,28 +89,24 @@ void Mesh_Send_RREP(uint16_t receiver_id, uint16_t destination_id, uint16_t sour
 
 	struct rrep_packet tosend;
 	tosend.transmitter_id = my_id;
-	tosend.receiver_id = receiver_id;
-	tosend.destination_id = destination_id;
-	tosend.source_id = source_id;
+	tosend.receiver_id = next_hop_to_source;
+	tosend.source_id = rreq_source_id;
+	tosend.responder_id = responder_id;
 	tosend.num_hops = num_hops;
-	tosend.destination_sequence_number = dest_seq_num;
+	tosend.responder_sequence_number = responder_sequence_number;
 
 #ifdef DEBUG
-	printf("\tnum_hops=%d receiver_id=%d destination_id=%d source_id=%d\n", num_hops, receiver_id, destination_id, source_id);
+	printf("\tnum_hops=%d rreq_source_id=%d responder_id=%d\n", num_hops, rreq_source_id, responder_id);
 #endif
 
 	uint8_t packet_arr[RREP_PKT_LEN];
 
-	packet_arr[0] = (receiver_id >> 8) & 0xFF;
-	packet_arr[1] = receiver_id & 0xFF;
+	packet_arr[0] = (next_hop_to_source >> 8) & 0xFF;
+	packet_arr[1] = next_hop_to_source & 0xFF;
 	packet_arr[2] = my_channel;
 
 	Format_Packet_RREP(tosend, packet_arr + LORA_OFFSET);
 	LoRa_SendData(packet_arr, RREP_PKT_LEN);
-
-    for (volatile int i = 0; i < 1000; i++) {
-    	__NOP();
-    }
 
 	offset = 0;
 }
@@ -270,9 +266,9 @@ void Format_Packet_RREP(struct rrep_packet packet, uint8_t packet_arr[]) {
 	Write_uint8(packet_arr, packet.num_hops);
 	Write_uint16(packet_arr, my_id);
 	Write_uint16(packet_arr, packet.receiver_id);
-	Write_uint16(packet_arr, packet.destination_id);
-	Write_uint32(packet_arr, packet.destination_sequence_number);
 	Write_uint16(packet_arr, packet.source_id);
+	Write_uint16(packet_arr, packet.responder_id);
+	Write_uint32(packet_arr, packet.responder_sequence_number);
 
 	End_Length_Count(packet_arr);
 
@@ -387,7 +383,6 @@ struct rreq_packet Unpack_Packet_RREQ(uint8_t parr[]) {
 	return packet;
 }
 
-//fills an rrep packet struct from an array
 struct rrep_packet Unpack_Packet_RREP(uint8_t parr[]) {
 	offset = 0;
 
@@ -403,18 +398,18 @@ struct rrep_packet Unpack_Packet_RREP(uint8_t parr[]) {
 	packet.num_hops = Read_uint8(parr);
 	packet.transmitter_id = Read_uint16(parr);
 	packet.receiver_id = Read_uint16(parr);
-	packet.destination_id = Read_uint16(parr);
-	packet.destination_sequence_number = Read_uint32(parr);
 	packet.source_id = Read_uint16(parr);
+	packet.responder_id = Read_uint16(parr);
+	packet.responder_sequence_number = Read_uint32(parr);
 
 	offset = 0;
 
 #ifdef DEBUG
 	printf("\tRREP packet with:\n");
 	printf(
-			"\tnum_hops = %d transmitter_id=%d receiver_id=%d destination_id=%d source_id=%d\n",
+			"\tnum_hops = %d transmitter_id=%d receiver_id=%d responder_id=%d source_id=%d\n",
 			packet.num_hops, packet.transmitter_id, packet.receiver_id,
-			packet.destination_id, packet.source_id);
+			packet.responder_id, packet.source_id);
 #endif
 	return packet;
 }
@@ -576,12 +571,15 @@ void Receive_Packet_Handler_RREQ(uint8_t packet_data[], uint8_t plength) {
 	}
 #ifdef DEBUG
 	printf("Forwarding RREQ further\n");
+	uint32_t t1 = HAL_GetTick();
 #endif
-	Mesh_Send_RREQ(pkt.destination_id, pkt.source_id,
+//	rand_delay(500, 600);
+#ifdef DEBUG
+	uint32_t t2 = HAL_GetTick();
+	printf("Delay took %lu ms\n", t2 - t1);
+#endif
+	Mesh_Send_RREQ(pkt.destination_id, pkt.destination_sequence_number, pkt.source_id,
 			pkt.source_sequence_number, pkt.num_hops + 1, pkt.rreq_id);
-
-	if (pkt.source_id != my_id)
-		Update_Route_Table(pkt.transmitter_id, 0, 0, pkt.transmitter_id);
 }
 
 void Receive_Packet_Handler_Hello(uint16_t source_id) {
@@ -602,15 +600,15 @@ void Receive_Packet_Handler_RREP(uint8_t packet_data[], uint8_t plength) {
 	volatile struct rrep_packet pkt;
 	pkt = Unpack_Packet_RREP(packet_data);
 
-	Update_Route_Table(pkt.source_id, pkt.destination_sequence_number, pkt.num_hops, pkt.transmitter_id);
+	Update_Route_Table(pkt.responder_id, pkt.responder_sequence_number, pkt.num_hops, pkt.transmitter_id);
 
-	if (pkt.destination_id == my_id) {
+	if (pkt.source_id == my_id) {
 #ifdef DEBUG
 		printf("RREP for me\n");
 		printf("Searching noroute table for blocked requests, with %d entries\n", pending_messages_table_entries);
 #endif
 		for (int i = 0; i < pending_messages_table_entries; i++) {
-			if (pending_messages_table[i].destination_id == pkt.source_id) {
+			if (pending_messages_table[i].destination_id == pkt.responder_id) {
 #ifdef DEBUG
 				printf("Found a matching entry in the noroute table\n");
 				printf("\tdestination_id=%d receiver_id=%d transmitter_id=%d data_length=%d\n",
@@ -626,14 +624,14 @@ void Receive_Packet_Handler_RREP(uint8_t packet_data[], uint8_t plength) {
 			}
 		}
 	} else {
-		int8_t reverse_route_idx = Route_Exists(pkt.destination_id);
+		int8_t reverse_route_idx = Route_Exists(pkt.source_id);
 		if (reverse_route_idx != -1) {
 		Mesh_Send_RREP(routing_table[reverse_route_idx].next_hop_destination_id,
-				pkt.destination_id, pkt.source_id, pkt.num_hops + 1,
-				pkt.destination_sequence_number);
+				pkt.source_id, pkt.responder_id, pkt.num_hops + 1,
+				pkt.responder_sequence_number);
 		}
 		// In case we didn't receive a RREQ, but we know that transmitter did - therefore transmitter knows how to get to the destination
-		Update_Route_Table(pkt.destination_id, pkt.destination_sequence_number, pkt.num_hops + 1, pkt.transmitter_id);
+		Update_Route_Table(pkt.source_id, 0, pkt.num_hops + 1, pkt.transmitter_id);
 	}
 }
 

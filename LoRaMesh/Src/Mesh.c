@@ -105,7 +105,7 @@ void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 #endif
 
 		Generate_RREQ_ID();
-		Mesh_Send_RREQ(destination_id, my_id, Increment_Sequence_Number(), 0, rreq_id);
+		Mesh_Send_RREQ(destination_id, 0, my_id, Increment_Sequence_Number(), 0, rreq_id);
 		Noroute_Table_Add(destination_id, data, data_length);
 	}
 }
@@ -130,7 +130,7 @@ void Mesh_Send_Hello() {
 	printf("Broadcasting a hello message\n");
 #endif
 	Generate_RREQ_ID();
-	Mesh_Send_RREQ(0, my_id, Increment_Sequence_Number(), 0, rreq_id);
+	Mesh_Send_RREQ(0, 0, my_id, Increment_Sequence_Number(), 0, rreq_id);
 }
 
 int8_t Route_Exists(uint16_t id) {
