@@ -21,10 +21,10 @@ uint32_t Get_Timestamp() {
 	return HAL_GetTick();
 }
 
-void rand_delay() {
+void rand_delay(uint32_t range_start, uint32_t range_end) {
 	HAL_RTC_GetTime(Mesh_RTC, &currentTime, RTC_FORMAT_BIN);
 
-	HAL_Delay(Get_Rand(currentTime.Seconds + currentTime.Minutes * 60 + currentTime.SubSeconds) % 5 + 1);
+	HAL_Delay(Get_Rand(currentTime.Seconds + currentTime.Minutes * 60 + currentTime.SubSeconds) % (range_end - range_start) + range_start + 1);
 }
 
 uint32_t Get_Rand(uint32_t x) {

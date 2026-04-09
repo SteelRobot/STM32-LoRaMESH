@@ -62,9 +62,9 @@ struct rreq_packet {
 struct rrep_packet {
 	uint16_t transmitter_id;
 	uint16_t receiver_id;
-	uint16_t destination_id;
 	uint16_t source_id;
-	uint32_t destination_sequence_number;
+	uint16_t responder_id;
+	uint32_t responder_sequence_number;
 	uint8_t num_hops;
 };
 

@@ -19,7 +19,7 @@ extern uint32_t DEBUG_lora_init_timestamp;
 #include <inttypes.h>
 
 uint32_t Get_Timestamp(void);
-void rand_delay(void);
+void rand_delay(uint32_t range_start, uint32_t range_end);
 uint32_t Get_Rand(uint32_t x);
 
 #ifdef DEBUG
