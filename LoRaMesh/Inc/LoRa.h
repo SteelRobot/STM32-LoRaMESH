@@ -147,5 +147,6 @@ uint16_t Queue_Available(void);
 uint8_t* Queue_Peek(void);
 void Queue_Pop(uint16_t size);
 void Queue_Process(void);
+bool Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packet_size);
 
 #endif /* INC_LORA_H_ */

@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <inttypes.h>
 
-#define TX_SIZE 512
+#define TX_SIZE 256
 
 RTC_TimeTypeDef currentTime;
 RTC_DateTypeDef currentDate;

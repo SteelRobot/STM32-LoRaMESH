@@ -486,6 +486,9 @@ void Receive_Packet_Handler(uint8_t packet_data[], uint8_t plength, uint8_t ptyp
 	case RREP_PACKET:
 		printf("\tPacket type is RREP\n");
 		break;
+	case RERR_PACKET:
+		printf("\tPacket type is RERR\n");
+		break;
 	case DATA_PACKET:
 		printf("\tPacket type is DATA\n");
 		break;
