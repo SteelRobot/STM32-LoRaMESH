@@ -569,15 +569,6 @@ void Receive_Packet_Handler_RREQ(uint8_t packet_data[], uint8_t plength) {
 				routing_table[route_idx].destination_sequence_number);
 		return;
 	}
-#ifdef DEBUG
-	printf("Forwarding RREQ further\n");
-	uint32_t t1 = HAL_GetTick();
-#endif
-//	rand_delay(500, 600);
-#ifdef DEBUG
-	uint32_t t2 = HAL_GetTick();
-	printf("Delay took %lu ms\n", t2 - t1);
-#endif
 	Mesh_Send_RREQ(pkt.destination_id, pkt.destination_sequence_number, pkt.source_id,
 			pkt.source_sequence_number, pkt.num_hops + 1, pkt.rreq_id);
 }

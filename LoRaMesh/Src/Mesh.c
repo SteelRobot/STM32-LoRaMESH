@@ -284,6 +284,7 @@ bool Is_Fresher_Route(uint32_t new_seq, uint32_t old_seq) {
 	return (int32_t)(new_seq - old_seq) >= 0;
 }
 
+
 // UART Interrupt to receive data from LoRa module, and to send your own data from keyboard
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart->Instance == COM_UART->Instance) {
