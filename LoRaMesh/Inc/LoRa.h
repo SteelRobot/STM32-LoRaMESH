@@ -14,12 +14,16 @@
 #define CRYPT_L 0x8
 #define PID 0x80
 
+#define LORA_REPLY_OFFSET 3
+#define LORA_REPLY_CODE 0xC1
+
 #define SUCCESS	true
 #define FAIL false
 
 extern UART_HandleTypeDef *LoRa_UART;
 extern UART_HandleTypeDef *COM_UART;
 extern RTC_HandleTypeDef *Mesh_RTC;
+extern TIM_HandleTypeDef *tim;
 
 extern uint16_t my_id;
 extern uint8_t my_channel;
@@ -104,7 +108,7 @@ enum WOR_Cycle {
 // REG3 ENUMS END
 
 
-void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_HandleTypeDef *hrtc);
+void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_HandleTypeDef *hrtc, TIM_HandleTypeDef *tim);
 void LoRa_ModeSelect(enum Mode mode);
 void LoRa_WriteAUXToLED(void);
 void LoRa_ReadRegister(uint8_t starting_address, uint8_t length);
@@ -136,9 +140,12 @@ void LoRa_Set_WORCycle(enum WOR_Cycle cycle);
 void LoRa_Set_Encryption(uint16_t key);
 
 void LoRa_Start_Receive(void);
-
-void Process_Packet(void);
 void Process_LoRa_Reply(void);
-void LoRa_Reply_Handler(uint8_t rx_final_buffer[], uint8_t starting_address, uint8_t data_length);
+
+void Queue_Push(uint8_t *data, uint16_t size);
+uint16_t Queue_Available(void);
+uint8_t* Queue_Peek(void);
+void Queue_Pop(uint16_t size);
+void Queue_Process(void);
 
 #endif /* INC_LORA_H_ */

@@ -37,7 +37,7 @@ extern uint8_t route_table_entries;
 extern RTC_TimeTypeDef currentTime;
 extern RTC_DateTypeDef currentDate;
 
-void Mesh_Init(void);
+void Mesh_Init();
 void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length);
 void Noroute_Table_Add(uint16_t destination_id, uint8_t data[], uint8_t data_length);
 int8_t Route_Exists(uint16_t id);

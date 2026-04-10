@@ -10,6 +10,8 @@
 #define PING_PACKET 4
 #define INVALID_PACKET 0xFF
 
+#define VALID_OPCODES 5 // Amount of valid opcodes, used for data validation
+
 #define PING_REQUEST 0
 #define PING_REPLY 1
 

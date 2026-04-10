@@ -7,7 +7,7 @@
 void Mesh_Send_Data(uint16_t destination_id, uint8_t *data, uint16_t receiver_id, uint16_t source_id, uint8_t data_length);
 void Mesh_Send_RREQ(uint16_t destination_id, uint32_t destination_sequence_number, uint16_t source_id, uint32_t source_sequence_number, uint8_t num_hops, uint32_t rreq_id);
 void Mesh_Send_RREP(uint16_t next_hop_to_source, uint16_t rreq_source_id, uint16_t responder_id, uint8_t num_hops, uint32_t responder_sequence_number);
-void Mesh_Send_RERR();
+void Mesh_Send_RERR(uint16_t receiver_id, uint16_t source_id, uint8_t num_hops);
 void Mesh_Send_Ping(uint16_t receiver_id, uint16_t destination_id, uint16_t source_id, uint8_t request_or_reply, uint32_t timestamp_ms);
 void Format_Packet_Data(struct data_packet packet, uint8_t packet_arr[]);
 void Format_Packet_RREQ(struct rreq_packet packet, uint8_t packet_arr[]);

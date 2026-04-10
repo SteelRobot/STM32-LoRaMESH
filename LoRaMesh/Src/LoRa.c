@@ -12,8 +12,10 @@
 #define SLEEP_TIME 150
 #define MODE_WORKING MODE_NORMAL
 
-#define RX_FINAL_SIZE 1024
+#define UART_QUEUE_SIZE 1024
 #define RX_SIZE 64
+
+uint16_t t1 = 0;
 
 static GPIO_TypeDef *GPIOx_M0;
 static GPIO_TypeDef *GPIOx_M1;
@@ -26,9 +28,13 @@ static uint16_t PIN_LED;
 UART_HandleTypeDef *LoRa_UART;
 UART_HandleTypeDef *COM_UART;
 RTC_HandleTypeDef *Mesh_RTC;
+TIM_HandleTypeDef *tim;
 
 // DMA Circular Buffer
-static uint8_t rx_buffer[RX_SIZE];
+static uint8_t rx_buffer[RX_SIZE] = {0};
+static uint8_t UART_Queue[UART_QUEUE_SIZE] = {0};
+static uint16_t queue_head = 0;
+static uint16_t queue_tail = 0;
 
 static uint8_t addh = 0;
 static uint8_t addl = 0;
@@ -38,8 +44,7 @@ static uint8_t reg1 = 0;
 static uint8_t reg2 = 0;
 static uint8_t reg3 = 0;
 
-static uint8_t rx_final_buffer[RX_FINAL_SIZE];
-static uint16_t indx_1 = 0, indx_2 = 0;
+static uint16_t rx_buffer_head = 0;
 static bool receiving_config_data = false;
 
 static uint8_t command_buffer[4];
@@ -47,7 +52,7 @@ static uint8_t command_buffer[4];
 uint16_t my_id;
 uint8_t my_channel;
 
-void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_HandleTypeDef *hrtc) {
+void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_HandleTypeDef *hrtc, TIM_HandleTypeDef *tim) {
 
 #ifdef DEBUG
 	DEBUG_lora_init_timestamp = Get_Timestamp();
@@ -82,7 +87,7 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 
 	LoRa_Set_SerialPortRate(SPR_9600);
 	LoRa_Set_SerialParityBit(SPB_8N1);
-	LoRa_Set_AirDataRate(ADR_0_3K);
+	LoRa_Set_AirDataRate(ADR_2_4K);
 
 	LoRa_Set_SubPacketSetting(SPS_240);
 	LoRa_Set_RSSIAmbientNoise(false);
@@ -102,6 +107,8 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 
 	my_channel = reg2;
 	my_id = (addh << 8) + addl;
+
+	HAL_TIM_Base_Start_IT(tim);
 
 #ifdef DEBUG
 	printf("Init LoRa Module:\n");
@@ -334,138 +341,184 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	}
 }
 
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM2) {
+    	Queue_Process();
+    }
+}
+
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
-	// Copy new data from DMA circular buffer to final buffer
-	memcpy(rx_final_buffer + indx_2, rx_buffer + indx_1, Size);
+	uint16_t new_bytes = Size - rx_buffer_head;
 
-	// This part with calculating indexes gave me a LOT of pain
-	indx_2 += Size - indx_1;
-	if (Size == RX_SIZE) {
-#ifdef DEBUG
-	printf("Received POSSIBLY NOT-FULL %d bytes | Packet type: 0x%02X | Payload: %d\n", indx_2, rx_final_buffer[0], rx_final_buffer[1]);
-#endif
-		indx_1 = 0;
-	} else {
-#ifdef DEBUG
-	printf("Received %d bytes | Packet type: 0x%02X | Payload: %d\n", indx_2, rx_final_buffer[0], rx_final_buffer[1]);
-#endif
-		indx_1 = Size;
+	// Copy new from DMA circular buffer to final buffer
+	if (new_bytes > 0) {
+		Queue_Push(rx_buffer + rx_buffer_head, new_bytes);
 	}
+	// This part with calculating indexes gave me a LOT of pain
+	rx_buffer_head = Size;
 
-//    __disable_irq();
+    if (Size == RX_SIZE) {
+    	rx_buffer_head = 0;
+    }
 
 	if (receiving_config_data) {
 		Process_LoRa_Reply();
-	} else {
-		Process_Packet();
 	}
 
-//    __enable_irq();
-
-#ifdef DEBUG
-	printf("Done processing packets\n");
-#endif
 	LoRa_Start_Receive();
 }
 
-void Process_Packet(void) {
-	while (indx_2 >= 2) {
-		uint8_t ptype = rx_final_buffer[0];
-		uint8_t payload_length = rx_final_buffer[1];
-		uint16_t total_packet_size = OPCODE_OFFSET + LENGTH_OFFSET + payload_length;
-
-		if (indx_2 >= total_packet_size) {
-#ifdef DEBUG
-			DEBUG_receive_to_send_timestamp = Get_Timestamp();
-			DEBUG_receive_to_send_flag = true;
-#endif
-			Receive_Packet_Handler(rx_final_buffer, total_packet_size, ptype);
-
-#ifdef DEBUG
-			DEBUG_receive_to_send_flag = false;
-#endif
-
-			if (indx_2 > total_packet_size) {
-				memmove(rx_final_buffer, rx_final_buffer + total_packet_size,
-						indx_2 - total_packet_size);
-				indx_2 -= total_packet_size;
-			} else {
-				indx_2 = 0;
-			}
-		} else {
-			break;
-		}
-	}
-}
-
 void Process_LoRa_Reply(void) {
-	while (indx_2 >= 3) {  // Must be: C1 | STARTING_ADDRESS | LENGTH
-		if (rx_final_buffer[0] != 0xC1) {
+	while (Queue_Available() > 3) {  // Must be: C1 | STARTING_ADDRESS | LENGTH
+		uint8_t *data = Queue_Peek();
+
+		if (data == NULL)
+			break;
+
+		uint8_t ptype = data[0];
+		uint8_t starting_address = data[1];
+		uint8_t data_length = data[2];
+		uint16_t total_reply_size = LORA_REPLY_OFFSET + data_length;
+
+		if (ptype != LORA_REPLY_CODE) {
 #ifdef DEBUG
-			printf("A LoRa reply had \"0x%02X\" as its reply code\n", rx_final_buffer[0]);
+			printf("A LoRa reply had \"0x%02X\" as its reply code\n", ptype);
 #endif
-			memmove(rx_final_buffer, rx_final_buffer + 1, indx_2 - 1);
-			indx_2--;
+			Queue_Pop(1);
 			continue;
 		}
 
-		uint8_t starting_address = rx_final_buffer[1];
-		uint8_t data_length = rx_final_buffer[2];
-		uint16_t total_reply_size = 3 + data_length;
-		if (indx_2 >= total_reply_size) {
-			LoRa_Reply_Handler(rx_final_buffer, starting_address, data_length);
+#ifdef DEBUG
+		printf("Valid LoRa reply: starting_address=0x%02X, data_length=%d\n",
+				starting_address, data_length);
+#endif
 
-			if (indx_2 > total_reply_size) {
-				memmove(rx_final_buffer, rx_final_buffer + total_reply_size, indx_2 - total_reply_size);
-				indx_2 -= total_reply_size;
-			} else {
-				indx_2 = 0;
-			}
-		} else {
+		if (Queue_Available() < total_reply_size)
 			break;
+
+		if (starting_address == PID) {
+			if (data_length != 7)
+				return;
+			for (int i = 0; i < 6; i++)
+				printf("0x%02X ", data[i]);
+			return;
 		}
+
+		uint8_t current_data;
+
+		for (int i = 0; i < data_length; i++) {
+			current_data = data[3 + i];
+			switch (starting_address + i) {
+			case ADDH:
+				addh = current_data;
+				break;
+			case ADDL:
+				addl = current_data;
+				break;
+			case NETID:
+				netid = current_data;
+				break;
+			case REG0:
+				reg0 = current_data;
+				break;
+			case REG1:
+				reg1 = current_data;
+				break;
+			case REG2:
+				reg2 = current_data;
+				break;
+			case REG3:
+				reg3 = current_data;
+				break;
+			default:
+				break;
+			}
+		}
+		receiving_config_data = false;
+		Queue_Pop(total_reply_size);
 	}
 }
 
-void LoRa_Reply_Handler(uint8_t rx_final_buffer[], uint8_t starting_address, uint8_t data_length) {
-	receiving_config_data = false;
+void Queue_Push(uint8_t *data, uint16_t size) {
+    if (queue_tail + size <= UART_QUEUE_SIZE) {
+        memcpy(&UART_Queue[queue_tail], data, size);
+        queue_tail += size;
+    } else {
+        uint16_t first_part = UART_QUEUE_SIZE - queue_tail;
+        memcpy(&UART_Queue[queue_tail], data, first_part);
+        memcpy(&UART_Queue[0], data + first_part, size - first_part);
+        queue_tail = size - first_part;
+    }
 
-	if (starting_address == PID) {
-		if (data_length != 7)
-			return;
-		for (int i = 0; i < 6; i++)
-			printf("0x%02X ", rx_final_buffer[i]);
-		return;
+    uint16_t available = Queue_Available();
+    if (available > UART_QUEUE_SIZE) {
+        queue_head = queue_tail;
+    }
+}
+
+uint16_t Queue_Available(void) {
+	if (queue_tail >= queue_head) {
+		return queue_tail - queue_head;
+	} else {
+        return UART_QUEUE_SIZE - queue_head + queue_tail;
 	}
+}
 
-	uint8_t current_data;
+uint8_t* Queue_Peek(void) {
+    if (queue_head == queue_tail) return NULL;
+    return &UART_Queue[queue_head];
+}
 
-	for (int i = 0; i < data_length; i++) {
-		current_data = rx_final_buffer[3 + i];
-		switch (starting_address + i) {
-		case ADDH:
-			addh = current_data;
+void Queue_Pop(uint16_t size) {
+    uint16_t available = Queue_Available();
+    size = (size > available) ? available : size;
+    queue_head = (queue_head + size) % UART_QUEUE_SIZE;
+}
+
+void Queue_Process(void) {
+    while (Queue_Available() >= 2) {
+        uint8_t *data = Queue_Peek();
+
+        if (data == NULL)
+        	break;
+
+        uint8_t ptype = data[0];
+        uint8_t payload_length = data[1];
+
+        if (ptype >= VALID_OPCODES) {
+        #ifdef DEBUG
+        			printf("Invalid opcode 0x%02X at offset 0\n", ptype);
+        #endif
+        			Queue_Pop(1);
+        			continue;
+        		}
+
+		uint16_t total_packet_size = OPCODE_OFFSET + LENGTH_OFFSET + payload_length;
+//		uint16_t total_packet_size += CRC_LENGTH; // Later......
+
+		if (Queue_Available() < total_packet_size)
 			break;
-		case ADDL:
-			addl = current_data;
-			break;
-		case NETID:
-			netid = current_data;
-			break;
-		case REG0:
-			reg0 = current_data;
-			break;
-		case REG1:
-			reg1 = current_data;
-			break;
-		case REG2:
-			reg2 = current_data;
-			break;
-		case REG3:
-			reg3 = current_data;
-			break;
-		default:
-			break;
-		}
-	}
+
+//		uint8_t received_crc = rx_final_buffer[total_packet_size - 1];
+//		uint8_t calculated_crc = Calculate_CRC8(rx_final_buffer, total_packet_size - 1);
+
+//		if (received_crc != calculated_crc) {
+//
+//		}
+
+#ifdef DEBUG
+		DEBUG_receive_to_send_timestamp = Get_Timestamp();
+		DEBUG_receive_to_send_flag = true;
+        printf("Valid packet: opcode=0x%02X, payload_len=%d\n", ptype, payload_length);
+#endif
+
+		Receive_Packet_Handler(data, total_packet_size, ptype);
+
+#ifdef DEBUG
+		DEBUG_receive_to_send_flag = false;
+#endif
+
+		Queue_Pop(total_packet_size);
+
+    }
 }
