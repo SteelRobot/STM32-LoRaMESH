@@ -378,7 +378,7 @@ void Process_LoRa_Reply(void) {
 		uint8_t ptype = data[0];
 		uint8_t starting_address = data[1];
 		uint8_t data_length = data[2];
-		uint16_t total_reply_size = LORA_REPLY_OFFSET + data_length;
+		uint8_t total_reply_size = LORA_REPLY_OFFSET + data_length;
 
 		if (ptype != LORA_REPLY_CODE) {
 #ifdef DEBUG
@@ -483,28 +483,18 @@ void Queue_Process(void) {
         	break;
 
         uint8_t ptype = data[0];
-        uint8_t payload_length = data[1];
-
-        if (ptype >= VALID_OPCODES) {
-        #ifdef DEBUG
-        			printf("Invalid opcode 0x%02X at offset 0\n", ptype);
-        #endif
-        			Queue_Pop(1);
-        			continue;
-        		}
-
+        uint16_t payload_length = data[1];
 		uint16_t total_packet_size = OPCODE_OFFSET + LENGTH_OFFSET + payload_length;
 //		uint16_t total_packet_size += CRC_LENGTH; // Later......
+//      uint8_t crc = data[total_packet_size - 1]; // Add to Queue_Validate_Packet
+
+        if (!Queue_Validate_Packet(data, ptype, total_packet_size)) {
+			Queue_Pop(1);
+			continue;
+        }
 
 		if (Queue_Available() < total_packet_size)
 			break;
-
-//		uint8_t received_crc = rx_final_buffer[total_packet_size - 1];
-//		uint8_t calculated_crc = Calculate_CRC8(rx_final_buffer, total_packet_size - 1);
-
-//		if (received_crc != calculated_crc) {
-//
-//		}
 
 #ifdef DEBUG
 		DEBUG_receive_to_send_timestamp = Get_Timestamp();
@@ -521,4 +511,65 @@ void Queue_Process(void) {
 		Queue_Pop(total_packet_size);
 
     }
+}
+
+bool Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packet_size) {
+	if (ptype >= VALID_OPCODES) {
+#ifdef DEBUG
+		printf("Invalid opcode 0x%02X at offset 0\n", ptype);
+#endif
+		return FAIL;
+	}
+
+	uint16_t expected_size;
+
+	switch (ptype) {
+	case RREQ_PACKET:
+		expected_size = RREQ_PKT_LEN - LORA_OFFSET;
+		if (total_packet_size != expected_size) {
+#ifdef DEBUG
+		printf("Expected RREQ length = %d, got length = %d", expected_size, total_packet_size);
+#endif
+			return FAIL;
+		}
+		break;
+	case RREP_PACKET:
+		expected_size = RREP_PKT_LEN - LORA_OFFSET;
+		if (total_packet_size != expected_size) {
+#ifdef DEBUG
+		printf("Expected RREP length = %d, got length = %d", expected_size, total_packet_size);
+#endif
+			return FAIL;
+		}
+		break;
+//	case RERR_PACKET:
+//		expected_size = RERR_PKT_LEN - LORA_OFFSET;
+//		if (total_packet_size != expected_size) {
+//#ifdef DEBUG
+//		printf("Expected RERR length = %d, got length = %d", expected_size, total_packet_size);
+//#endif
+//			return FAIL;
+//		}
+//		break;
+	case PING_PACKET:
+		expected_size = PING_PKT_LEN - LORA_OFFSET;
+		if (total_packet_size != expected_size) {
+#ifdef DEBUG
+		printf("Expected PING length = %d, got length = %d", expected_size, total_packet_size);
+#endif
+			return FAIL;
+		}
+		break;
+	default:
+		break;
+	}
+
+//	uint8_t calculated_crc = Calculate_CRC8(data, total_packet_size - 1);
+//	if (crc != calculated_crc) {
+//#ifdef DEBUG
+//		printf("Calculated CRC = %d, got CRC = %d", calculated_crc, crc);
+//#endif
+//		return FAIL;
+//	}
+	return SUCCESS;
 }

@@ -8,7 +8,7 @@
 #define RREQ_TABLE_MAX_ENTRIES 10
 #define DEFAULT_ROUTE_EXPIRATION_TIME 600 // Seconds
 #define DEFAULT_RREQ_EXPIRATION_TIME 10 // Seconds
-#define MAX_PAYLOAD_SIZE 1024
+#define MAX_PAYLOAD_SIZE 240
 
 struct route_table_entry {
 	uint16_t destination_id;
