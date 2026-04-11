@@ -15,6 +15,7 @@ RTC_DateTypeDef currentDate;
 
 uint8_t route_table_entries = 0;
 static uint8_t rreq_table_entries = 0;
+uint8_t pending_messages_table_entries = 0;
 
 static uint8_t tx_buffer[TX_SIZE] = { 0 };
 static uint8_t tx_byte;
@@ -23,8 +24,7 @@ static uint8_t tx_index = 0;
 static uint32_t my_sequence_number;
 static uint32_t rreq_id;
 struct route_table_entry routing_table[ROUTING_TABLE_LENGTH];
-struct pending_message pending_messages_table[PENDING_MESSAGES_TABLE_MAX_ENTRIES];
-uint8_t pending_messages_table_entries;
+struct pending_message_entry pending_messages_table[PENDING_MESSAGES_TABLE_MAX_ENTRIES];
 static struct rreq_table_entry rreq_table[RREQ_TABLE_MAX_ENTRIES];
 
 // AODV
@@ -57,8 +57,6 @@ void Mesh_Init() {
 }
 
 void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length) {
-	bool isPing = false;
-
 	printf("\n++++++++++++++++++++++++++++++++++++++++++");
 	printf("\nYOU -> Node %d\n", destination_id);
 	for (int i = 0; i < data_length; i++)
@@ -78,27 +76,16 @@ void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 		return;
 	}
 
-
-	if (data_length == 4 && memcmp(data, "ping", 4) == 0) {
 #ifdef DEBUG
-	printf("Handling a ping packet\n");
+	printf("Adding the message to the pending messages table\n");
 #endif
-	    isPing = true;
-	}
-#ifdef DEBUG
-	printf("Sending data over the Mesh\n");
-#endif
-
+	Pending_Messages_Table_Add_Generated(destination_id, data, data_length);
 	int8_t route_idx = Route_Exists(destination_id);
 	if (route_idx != -1) {
 #ifdef DEBUG
 		printf("Route to %d is known. N of hops: %d\n", destination_id, routing_table[route_idx].hop_count);
 #endif
 
-		if (isPing) {
-			Mesh_Send_Ping(routing_table[route_idx].next_hop_destination_id, routing_table[route_idx].destination_id, my_id, PING_REQUEST, Get_Timestamp());
-		} else
-			Mesh_Send_Data(routing_table[route_idx].destination_id, data, routing_table[route_idx].next_hop_destination_id, my_id, data_length);
 	} else {
 #ifdef DEBUG
 		printf("Route to %d is NOT KNOWN. Sending a RREQ packet and adding the request to the no-route table\n", destination_id);
@@ -106,23 +93,109 @@ void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 
 		Generate_RREQ_ID();
 		Mesh_Send_RREQ(destination_id, 0, my_id, Increment_Sequence_Number(), 0, rreq_id);
-		Noroute_Table_Add(destination_id, data, data_length);
 	}
 }
 
-void Noroute_Table_Add(uint16_t destination_id, uint8_t data[], uint8_t data_length) {
+void Pending_Messages_Table_Add(uint16_t next_hop_destination_id,
+		uint16_t destination_id, uint16_t source_id, uint32_t message_id, uint8_t packet_type, uint8_t ttl, uint8_t ping_request_or_reply,
+		uint8_t data[], uint8_t data_length, enum message_origin_type origin) {
 
-    if (data_length > MAX_PAYLOAD_SIZE) {
-    	printf("Data was too large (%d byte) to be added to no-route table. Max length: %d\n", data_length, MAX_PAYLOAD_SIZE);
-        return;
-    }
+	if (data_length > MAX_PAYLOAD_SIZE) {
+		printf(
+				"Data was too large (%d byte) to be added to no-route table. Max length: %d\n",
+				data_length, MAX_PAYLOAD_SIZE);
+		return;
+	}
 
-	pending_messages_table[pending_messages_table_entries].destination_id = destination_id;
-	memcpy(pending_messages_table[pending_messages_table_entries].data, data, data_length);
-	pending_messages_table[pending_messages_table_entries].data_length = data_length;
+	uint8_t idx = pending_messages_table_entries;
+	pending_messages_table[idx].next_hop_destination_id =
+			next_hop_destination_id;
+	pending_messages_table[idx].destination_id = destination_id;
+	pending_messages_table[idx].source_id = source_id;
+	pending_messages_table[idx].message_id = message_id;
+	pending_messages_table[idx].packet_type = packet_type;
+	pending_messages_table[idx].TTL = ttl;
+	pending_messages_table[idx].ping_request_or_reply = ping_request_or_reply;
+	memcpy(pending_messages_table[idx].data, data, data_length);
+	pending_messages_table[idx].data_length = data_length;
+	pending_messages_table[idx].origin = origin;
+	pending_messages_table[idx].ack_received = false;
+	pending_messages_table[idx].retries = 0;
+	pending_messages_table[idx].sent_time_ms = 0;
+
 	pending_messages_table_entries++;
 	if (pending_messages_table_entries == PENDING_MESSAGES_TABLE_MAX_ENTRIES)
 		pending_messages_table_entries = 0;
+}
+
+void Pending_Messages_Table_Add_Generated(uint16_t destination_id,
+		uint8_t data[], uint8_t data_length) {
+	int8_t route_idx = Route_Exists(destination_id);
+	uint16_t next_hop_destination_id =
+			(route_idx != -1) ?
+					routing_table[route_idx].next_hop_destination_id : 0;
+	uint32_t message_id = Get_Rand(
+			currentTime.Seconds + currentTime.Minutes * 60
+					+ currentTime.SubSeconds);
+
+	uint8_t packet_type = DATA_PACKET;
+	uint8_t ping_type = 0;
+
+	if (data_length == 4 && memcmp(data, "ping", 4) == 0) {
+		packet_type = PING_PACKET;
+		ping_type = PING_REQUEST;
+	}
+
+	Pending_Messages_Table_Add(next_hop_destination_id, destination_id, my_id,
+			message_id, packet_type, MAX_HOPS_TTL, ping_type, data, data_length, GENERATED);
+}
+
+void Pending_Messages_Table_Add_Forwarded(uint16_t next_hop_destination_id,
+		uint16_t destination_id, uint16_t source_id, uint32_t message_id, uint8_t packet_type, uint8_t TTL,
+		uint8_t ping_request_or_reply, uint8_t data[], uint8_t data_length) {
+	Pending_Messages_Table_Add(next_hop_destination_id, destination_id, source_id,
+			message_id, packet_type, TTL - 1, ping_request_or_reply, data, data_length, FORWARDED);
+}
+
+void Pending_Messages_Table_Process(void) {
+	for (int i = 0; i < pending_messages_table_entries; i++) {
+		if (pending_messages_table[i].ack_received == true) {
+			continue;
+		}
+
+		int8_t route_idx = Route_Exists(pending_messages_table[i].destination_id);
+
+		if (pending_messages_table[i].origin == GENERATED && route_idx == -1) {
+			Generate_RREQ_ID();
+			Mesh_Send_RREQ(pending_messages_table[i].destination_id, 0, my_id,
+					Increment_Sequence_Number(), 0, rreq_id);
+			return;
+		}
+
+		pending_messages_table[i].next_hop_destination_id = routing_table[route_idx].next_hop_destination_id;
+
+		if (pending_messages_table[i].retries == MAX_ACK_RETRIES) {
+			uint16_t broken_dest[1] = {pending_messages_table[i].destination_id};
+			Propagate_RERR_Upstream(broken_dest, 1);
+			return;
+		}
+
+		if (pending_messages_table[i].packet_type == PING_PACKET) {
+			Mesh_Send_Ping(routing_table[route_idx].next_hop_destination_id,
+					pending_messages_table[i].destination_id, pending_messages_table[i].source_id, pending_messages_table[i].message_id,
+					pending_messages_table[i].TTL, pending_messages_table[i].ping_request_or_reply, Get_Timestamp());
+		} else if (pending_messages_table[i].packet_type == PING_PACKET) {
+			Mesh_Send_Data(pending_messages_table[i].destination_id,
+					pending_messages_table[i].data, routing_table[route_idx].next_hop_destination_id, pending_messages_table[i].source_id, pending_messages_table[i].message_id,
+					pending_messages_table[i].TTL, pending_messages_table[i].data_length);
+		}
+
+		pending_messages_table[i].sent_time_ms = Get_Timestamp();
+		pending_messages_table[i].ack_received = false;
+		pending_messages_table[i].retries = pending_messages_table[i].retries + 1;
+
+		return;
+	}
 }
 
 void Mesh_Send_Hello() {
@@ -203,6 +276,7 @@ void Update_Route_Table(uint16_t dest_id, uint32_t dest_seq_num,
 	if (dest_id == 0x0000) // Reserved for Hello packets
 		return;
 
+	int32_t new_expiration = Get_Timestamp() + (DEFAULT_ROUTE_EXPIRATION_TIME * 1000);
 	int8_t source_idx = Route_Exists(dest_id);
 	if (source_idx == -1) {
 #ifdef DEBUG
@@ -210,13 +284,14 @@ void Update_Route_Table(uint16_t dest_id, uint32_t dest_seq_num,
 #endif
 
 		if (route_table_entries >= ROUTING_TABLE_LENGTH)
-			rreq_table_entries = 0;
+			route_table_entries = 0;
 
 		routing_table[route_table_entries].destination_id = dest_id;
 		routing_table[route_table_entries].destination_sequence_number = dest_seq_num;
 		routing_table[route_table_entries].hop_count = num_hops;
 		routing_table[route_table_entries].next_hop_destination_id = next_hop;
-		routing_table[route_table_entries].expiration_time = Get_Timestamp() + (DEFAULT_ROUTE_EXPIRATION_TIME * 1000);
+		routing_table[route_table_entries].expiration_time = new_expiration;
+		routing_table[route_table_entries].precursor_count = 0;
 		route_table_entries++;
 	} else {
 		struct route_table_entry *existing_route = &routing_table[source_idx];
@@ -228,14 +303,14 @@ void Update_Route_Table(uint16_t dest_id, uint32_t dest_seq_num,
 			existing_route->destination_sequence_number = dest_seq_num;
 			existing_route->hop_count = num_hops;
 			existing_route->next_hop_destination_id = next_hop;
-			existing_route->expiration_time = DEFAULT_ROUTE_EXPIRATION_TIME;
+			existing_route->expiration_time = new_expiration;
 		} else if (dest_seq_num == existing_route->destination_sequence_number && num_hops < existing_route->hop_count) {
 #ifdef DEBUG
 			printf("\tSame sequence number, but new route is more efficient. Updating.\n");
 #endif
 			existing_route->hop_count = num_hops;
 			existing_route->next_hop_destination_id = next_hop;
-			existing_route->expiration_time = DEFAULT_ROUTE_EXPIRATION_TIME;
+			existing_route->expiration_time = new_expiration;
 		} else {
 #ifdef DEBUG
 			printf("\tExisting route is fresher or equally good. Keeping.\n");
@@ -264,6 +339,27 @@ void Update_Routes_Expiration(void) {
 	}
 
 	route_table_entries = write_idx;
+}
+
+void Add_To_Precursor_List(uint8_t route_idx, uint16_t precursor_id) {
+	if (precursor_id == 0x0000 || precursor_id == 0xFFFF)
+		return;
+
+	struct route_table_entry *route = &routing_table[route_idx];
+
+	for (uint8_t i = 0; i < route->precursor_count; i++) {
+		if (route->precursor_list[i] == precursor_id)
+			return;
+	}
+
+	if (route->precursor_count < MAX_PRECURSORS) {
+		route->precursor_list[route->precursor_count] = precursor_id;
+		route->precursor_count++;
+#ifdef DEBUG
+		printf("Added precursor %d to route %d\n",
+				precursor_id, route->destination_id);
+#endif
+	}
 }
 
 void Generate_RREQ_ID(void) {

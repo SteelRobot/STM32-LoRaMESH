@@ -117,7 +117,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-	LoRa_Init(&huart2, &hlpuart1, &hrtc);
+	LoRa_Init(&huart2, &hlpuart1, &hrtc, &htim2);
 
 	// Set node's address here with LoRa_Set_Address(uint8_t address);
 	// Advisable to create multiple build for each MCU, so that you can assign addresses here, and just switch run configuration
@@ -366,7 +366,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 4000;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 500;
+  htim2.Init.Period = 50;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
