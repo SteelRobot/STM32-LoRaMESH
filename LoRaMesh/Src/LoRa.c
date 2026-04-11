@@ -15,8 +15,6 @@
 #define UART_QUEUE_SIZE 1024
 #define RX_SIZE 64
 
-uint16_t t1 = 0;
-
 static GPIO_TypeDef *GPIOx_M0;
 static GPIO_TypeDef *GPIOx_M1;
 static GPIO_TypeDef *GPIOx_AUX;
@@ -28,7 +26,7 @@ static uint16_t PIN_LED;
 UART_HandleTypeDef *LoRa_UART;
 UART_HandleTypeDef *COM_UART;
 RTC_HandleTypeDef *Mesh_RTC;
-TIM_HandleTypeDef *tim;
+TIM_HandleTypeDef *TASK_TIM;
 
 // DMA Circular Buffer
 static uint8_t rx_buffer[RX_SIZE] = {0};
@@ -61,6 +59,7 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 	LoRa_UART = huart1;
 	COM_UART = huart2;
 	Mesh_RTC = hrtc;
+	TASK_TIM = tim;
 
 	GPIOx_M0 = M0_GPIO_Port;
 	GPIOx_M1 = M1_GPIO_Port;
@@ -341,12 +340,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	}
 }
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-    if (htim->Instance == TIM2) {
-    	Queue_Process();
-    }
-}
-
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 	uint16_t new_bytes = Size - rx_buffer_head;
 
@@ -514,7 +507,7 @@ void Queue_Process(void) {
 }
 
 bool Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packet_size) {
-	if (ptype >= VALID_OPCODES) {
+	if (ptype > VALID_OPCODES) {
 #ifdef DEBUG
 		printf("Invalid opcode 0x%02X at offset 0\n", ptype);
 #endif
@@ -528,7 +521,7 @@ bool Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packet_s
 		expected_size = RREQ_PKT_LEN - LORA_OFFSET;
 		if (total_packet_size != expected_size) {
 #ifdef DEBUG
-		printf("Expected RREQ length = %d, got length = %d", expected_size, total_packet_size);
+		printf("Expected RREQ length = %d, got length = %d\n", expected_size, total_packet_size);
 #endif
 			return FAIL;
 		}
@@ -537,25 +530,25 @@ bool Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packet_s
 		expected_size = RREP_PKT_LEN - LORA_OFFSET;
 		if (total_packet_size != expected_size) {
 #ifdef DEBUG
-		printf("Expected RREP length = %d, got length = %d", expected_size, total_packet_size);
+		printf("Expected RREP length = %d, got length = %d\n", expected_size, total_packet_size);
 #endif
 			return FAIL;
 		}
 		break;
-//	case RERR_PACKET:
-//		expected_size = RERR_PKT_LEN - LORA_OFFSET;
-//		if (total_packet_size != expected_size) {
-//#ifdef DEBUG
-//		printf("Expected RERR length = %d, got length = %d", expected_size, total_packet_size);
-//#endif
-//			return FAIL;
-//		}
-//		break;
 	case PING_PACKET:
 		expected_size = PING_PKT_LEN - LORA_OFFSET;
 		if (total_packet_size != expected_size) {
 #ifdef DEBUG
-		printf("Expected PING length = %d, got length = %d", expected_size, total_packet_size);
+		printf("Expected PING length = %d, got length = %d\n", expected_size, total_packet_size);
+#endif
+			return FAIL;
+		}
+		break;
+	case ACK_PACKET:
+		expected_size = ACK_PKT_LEN - LORA_OFFSET;
+		if (total_packet_size != expected_size) {
+#ifdef DEBUG
+		printf("Expected ACK length = %d, got length = %d\n", expected_size, total_packet_size);
 #endif
 			return FAIL;
 		}

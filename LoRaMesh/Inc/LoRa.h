@@ -23,7 +23,7 @@
 extern UART_HandleTypeDef *LoRa_UART;
 extern UART_HandleTypeDef *COM_UART;
 extern RTC_HandleTypeDef *Mesh_RTC;
-extern TIM_HandleTypeDef *tim;
+extern TIM_HandleTypeDef *TASK_TIM;
 
 extern uint16_t my_id;
 extern uint8_t my_channel;

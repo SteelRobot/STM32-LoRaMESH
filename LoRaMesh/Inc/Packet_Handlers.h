@@ -4,28 +4,33 @@
 #include <stdbool.h>
 #include "Packet_Formats.h"
 
-void Mesh_Send_Data(uint16_t destination_id, uint8_t *data, uint16_t receiver_id, uint16_t source_id, uint8_t data_length);
+void Mesh_Send_Data(uint16_t destination_id, uint8_t *data, uint16_t receiver_id, uint16_t source_id, uint32_t message_id, uint8_t TTL, uint8_t data_length);
 void Mesh_Send_RREQ(uint16_t destination_id, uint32_t destination_sequence_number, uint16_t source_id, uint32_t source_sequence_number, uint8_t num_hops, uint32_t rreq_id);
-void Mesh_Send_RREP(uint16_t next_hop_to_source, uint16_t rreq_source_id, uint16_t responder_id, uint8_t num_hops, uint32_t responder_sequence_number);
-void Mesh_Send_RERR(uint16_t receiver_id, uint16_t source_id, uint8_t num_hops);
-void Mesh_Send_Ping(uint16_t receiver_id, uint16_t destination_id, uint16_t source_id, uint8_t request_or_reply, uint32_t timestamp_ms);
+void Mesh_Send_RREP(uint16_t next_hop_to_source, uint16_t rreq_source_id, uint16_t responder_id, uint8_t TTL, uint8_t num_hops, uint32_t responder_sequence_number);
+void Mesh_Send_RERR(uint16_t receiver_id, uint16_t *invalidated_dests, uint32_t *invalidated_seq_nums, uint8_t dest_count, uint8_t TTL);
+void Mesh_Send_Ping(uint16_t receiver_id, uint16_t destination_id, uint16_t source_id, uint32_t message_id, uint8_t TTL, uint8_t request_or_reply, uint32_t timestamp_ms);
+void Mesh_Send_ACK(uint16_t receiver_id, uint16_t destination_id, uint32_t message_id);
 void Format_Packet_Data(struct data_packet packet, uint8_t packet_arr[]);
 void Format_Packet_RREQ(struct rreq_packet packet, uint8_t packet_arr[]);
 void Format_Packet_RREP(struct rrep_packet packet, uint8_t packet_arr[]);
 void Format_Packet_RERR(struct rerr_packet packet, uint8_t packet_arr[]);
 void Format_Packet_Ping(struct ping_packet packet, uint8_t packet_arr[]);
+void Format_Packet_ACK(struct ack_packet packet, uint8_t packet_arr[]);
 struct data_packet Unpack_Packet_DATA(uint8_t parr[]);
 struct rreq_packet Unpack_Packet_RREQ(uint8_t parr[]);
 struct rrep_packet Unpack_Packet_RREP(uint8_t parr[]);
 struct rerr_packet Unpack_Packet_RERR(uint8_t parr[]);
 struct ping_packet Unpack_Packet_Ping(uint8_t parr[]);
+struct ack_packet Unpack_Packet_ACK(uint8_t parr[]);
 void Receive_Packet_Handler(uint8_t packet_data[], uint8_t plength, uint8_t ptype);
 void Receive_Packet_Handler_RREQ(uint8_t packet_data[], uint8_t plength);
 void Receive_Packet_Handler_Hello(uint16_t source_id);
 void Receive_Packet_Handler_RREP(uint8_t packet_data[], uint8_t plength);
 void Receive_Packet_Handler_RERR(uint8_t packet_data[], uint8_t plength);
+void Propagate_RERR_Upstream(uint16_t *invalidated_dests, uint8_t dest_count);
 void Receive_Packet_Handler_Data(uint8_t packet_data[], uint8_t plength);
 void Receive_Packet_Handler_Ping(uint8_t packet_data[], uint8_t plength);
+void Receive_Packet_Handler_ACK(uint8_t packet_data[], uint8_t plength);
 void Receive_Packet_Handler_Invalid(uint8_t packet_data[], uint8_t plength);
 void DATA_RX_HANDLER(struct data_packet rx_pkt);
 

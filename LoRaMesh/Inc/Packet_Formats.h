@@ -3,14 +3,15 @@
 
 #define MAX_UNREACHABLE_DESTS 5
 
-#define DATA_PACKET 0
-#define RREQ_PACKET 1
-#define RREP_PACKET 2
-#define RERR_PACKET 3
-#define PING_PACKET 4
+#define DATA_PACKET 1
+#define RREQ_PACKET 2
+#define RREP_PACKET 3
+#define RERR_PACKET 4
+#define PING_PACKET 5
+#define ACK_PACKET 6
 #define INVALID_PACKET 0xFF
 
-#define VALID_OPCODES 5 // Amount of valid opcodes, used for data validation
+#define VALID_OPCODES 6 // Amount of valid opcodes, used for data validation
 
 #define PING_REQUEST 0
 #define PING_REPLY 1
@@ -31,14 +32,17 @@
 #define TIMESTAMP_LEN 4
 #define NUM_UNREACHABLE_DESTS_LEN 1
 #define UNREACHABLE_DESTS_LEN ((DESTINATION_ID_LEN + SEQUENCE_NUM_LEN) * MAX_UNREACHABLE_DESTS)
+#define MESSAGE_ID_LEN 4
+#define TTL_LEN 1
 
-#define DATA_BASE_PKT_LEN (OPCODE_OFFSET + LENGTH_OFFSET + RESERVED_OFFSET + TRANSMITTER_ID_LEN + RECEIVER_ID_LEN + DESTINATION_ID_LEN + SOURCE_ID_LEN)
+#define DATA_BASE_PKT_LEN (OPCODE_OFFSET + LENGTH_OFFSET + RESERVED_OFFSET + TRANSMITTER_ID_LEN + RECEIVER_ID_LEN + DESTINATION_ID_LEN + SOURCE_ID_LEN + MESSAGE_ID_LEN + TTL_LEN)
 
 #define DATA_PKT_LEN (LORA_OFFSET + DATA_BASE_PKT_LEN)
 #define RREQ_PKT_LEN (LORA_OFFSET + OPCODE_OFFSET + LENGTH_OFFSET + RESERVED_OFFSET + NUM_HOPS_LEN + TRANSMITTER_ID_LEN + RREQ_ID_LEN + DESTINATION_ID_LEN + SOURCE_ID_LEN + SEQUENCE_NUM_LEN + SEQUENCE_NUM_LEN)
-#define RREP_PKT_LEN (LORA_OFFSET + OPCODE_OFFSET + LENGTH_OFFSET + RESERVED_OFFSET + NUM_HOPS_LEN + TRANSMITTER_ID_LEN + RECEIVER_ID_LEN + DESTINATION_ID_LEN + SEQUENCE_NUM_LEN + SOURCE_ID_LEN)
+#define RREP_PKT_LEN (LORA_OFFSET + OPCODE_OFFSET + LENGTH_OFFSET + RESERVED_OFFSET + NUM_HOPS_LEN + TRANSMITTER_ID_LEN + RECEIVER_ID_LEN + DESTINATION_ID_LEN + SEQUENCE_NUM_LEN + SOURCE_ID_LEN + TTL_LEN)
 #define RRER_PKT_LEN (LORA_OFFSET + OPCODE_OFFSET + LENGTH_OFFSET + RESERVED_OFFSET + TRANSMITTER_ID_LEN + UNREACHABLE_DESTS_LEN)
-#define PING_PKT_LEN (LORA_OFFSET + OPCODE_OFFSET + LENGTH_OFFSET + RESERVED_OFFSET + TRANSMITTER_ID_LEN + RECEIVER_ID_LEN + DESTINATION_ID_LEN + SOURCE_ID_LEN + REQUEST_OR_REPLY_LEN + TIMESTAMP_LEN)
+#define PING_PKT_LEN (LORA_OFFSET + OPCODE_OFFSET + LENGTH_OFFSET + RESERVED_OFFSET + TRANSMITTER_ID_LEN + RECEIVER_ID_LEN + DESTINATION_ID_LEN + SOURCE_ID_LEN + TTL_LEN + MESSAGE_ID_LEN + REQUEST_OR_REPLY_LEN + TIMESTAMP_LEN)
+#define ACK_PKT_LEN (LORA_OFFSET + OPCODE_OFFSET + LENGTH_OFFSET + RESERVED_OFFSET + TRANSMITTER_ID_LEN + RECEIVER_ID_LEN + DESTINATION_ID_LEN + MESSAGE_ID_LEN)
 
 #define LENGTH_BYTE_POS 1
 
@@ -47,6 +51,8 @@ struct data_packet {
 	uint16_t receiver_id;
 	uint16_t destination_id;
 	uint16_t source_id;
+	uint32_t message_id;
+	uint8_t TTL;
 	uint8_t data_length; // Doesn't count for BASE_PKT_LEN
 	uint8_t *packet_data;
 };
@@ -58,7 +64,7 @@ struct rreq_packet {
 	uint16_t source_id;
 	uint32_t source_sequence_number;
 	uint32_t destination_sequence_number;
-	uint8_t num_hops;
+	uint8_t hop_count;
 };
 
 struct rrep_packet {
@@ -67,7 +73,8 @@ struct rrep_packet {
 	uint16_t source_id;
 	uint16_t responder_id;
 	uint32_t responder_sequence_number;
-	uint8_t num_hops;
+	uint8_t TTL;
+	uint8_t hop_count;
 };
 
 struct rerr_packet {
@@ -84,8 +91,17 @@ struct ping_packet {
 	uint16_t receiver_id;
 	uint16_t destination_id;
 	uint16_t source_id;
+	uint32_t message_id;
+	uint8_t TTL;
 	uint32_t timestamp_ms;
 	uint8_t request_or_reply;
+};
+
+struct ack_packet {
+	uint16_t transmitter_id;
+	uint16_t receiver_id;
+	uint16_t destination_id;
+	uint32_t message_id;
 };
 
 #endif /* INC_PACKET_FORMATS_H_ */
