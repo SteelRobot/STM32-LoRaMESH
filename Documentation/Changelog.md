@@ -38,3 +38,56 @@
 - Separated library further from hardware by putting it as an outside lib
 - Added a project for an STM32L4
 - Fixed interrupt handling
+
+## 10/03/2026
+
+- Created new dev branch
+
+## 12/03/2026
+
+- Added support for printf function to use Virtual COM port UART
+- Started work on the networking protocol
+
+## 24/03/2026
+
+- Switched incoming packets logic handling from interrupts to DMA
+
+## 03/04/2026
+
+- Addition of RTC to use for PRNG later.
+- Separation of packet formats into a separate file
+- Util.c file added
+
+## 04/04/2026
+
+- Addition of Ping packets. DMA fixes
+
+## 05/04/2026
+
+- STM32L4-specific fixes
+
+## 08/04/2026
+
+- RREQ packet fixes and features (like RREQ expiring)
+
+## 09/04/2026
+
+- Change of how Hello packets are handled
+
+## 10/04/2026
+
+- Addition of queues to process incoming packets
+- Addition of a timer to process queue within its callback
+- Validation of incoming packets in the queue based on length
+
+## 11/04/2026
+
+- First attempts at creating a queue for outgoing packets
+
+## 29/04/2026
+
+- Remake of outgoing packets queue based on storing raw bytes.
+- Addition of ACK packets and handling confirmations of packets
+- Addition of a CRC field to further validate packets (if packet type is valid, but CRC is not)
+- Refactored Packet_Formats.h file to make it more readable
+- Refactored functions to make them consistent with each other

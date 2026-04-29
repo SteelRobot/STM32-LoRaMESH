@@ -9,7 +9,7 @@
 
 #define COMMAND_READ_PREFIX 0xC1
 #define COMMAND_WRITE_PREFIX 0xC0
-#define SLEEP_TIME 150
+#define SLEEP_TIME 200
 #define MODE_WORKING MODE_NORMAL
 
 #define UART_QUEUE_SIZE 1024
@@ -345,7 +345,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
 	// Copy new from DMA circular buffer to final buffer
 	if (new_bytes > 0) {
-		Queue_Push(rx_buffer + rx_buffer_head, new_bytes);
+		RX_Queue_Push(rx_buffer + rx_buffer_head, new_bytes);
 	}
 	// This part with calculating indexes gave me a LOT of pain
 	rx_buffer_head = Size;
@@ -362,8 +362,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 }
 
 void Process_LoRa_Reply(void) {
-	while (Queue_Available() > 3) {  // Must be: C1 | STARTING_ADDRESS | LENGTH
-		uint8_t *data = Queue_Peek();
+	while (RX_Queue_Available() > 3) {  // Must be: C1 | STARTING_ADDRESS | LENGTH
+		uint8_t *data = RX_Queue_Peek();
 
 		if (data == NULL)
 			break;
@@ -377,7 +377,7 @@ void Process_LoRa_Reply(void) {
 #ifdef DEBUG
 			printf("A LoRa reply had \"0x%02X\" as its reply code\n", ptype);
 #endif
-			Queue_Pop(1);
+			RX_Queue_Pop(1);
 			continue;
 		}
 
@@ -386,7 +386,7 @@ void Process_LoRa_Reply(void) {
 				starting_address, data_length);
 #endif
 
-		if (Queue_Available() < total_reply_size)
+		if (RX_Queue_Available() < total_reply_size)
 			break;
 
 		if (starting_address == PID) {
@@ -428,11 +428,11 @@ void Process_LoRa_Reply(void) {
 			}
 		}
 		receiving_config_data = false;
-		Queue_Pop(total_reply_size);
+		RX_Queue_Pop(total_reply_size);
 	}
 }
 
-void Queue_Push(uint8_t *data, uint16_t size) {
+void RX_Queue_Push(uint8_t *data, uint16_t size) {
     if (queue_tail + size <= UART_QUEUE_SIZE) {
         memcpy(&UART_Queue[queue_tail], data, size);
         queue_tail += size;
@@ -443,13 +443,13 @@ void Queue_Push(uint8_t *data, uint16_t size) {
         queue_tail = size - first_part;
     }
 
-    uint16_t available = Queue_Available();
+    uint16_t available = RX_Queue_Available();
     if (available > UART_QUEUE_SIZE) {
         queue_head = queue_tail;
     }
 }
 
-uint16_t Queue_Available(void) {
+uint16_t RX_Queue_Available(void) {
 	if (queue_tail >= queue_head) {
 		return queue_tail - queue_head;
 	} else {
@@ -457,37 +457,37 @@ uint16_t Queue_Available(void) {
 	}
 }
 
-uint8_t* Queue_Peek(void) {
+uint8_t* RX_Queue_Peek(void) {
     if (queue_head == queue_tail) return NULL;
     return &UART_Queue[queue_head];
 }
 
-void Queue_Pop(uint16_t size) {
-    uint16_t available = Queue_Available();
+void RX_Queue_Pop(uint16_t size) {
+    uint16_t available = RX_Queue_Available();
     size = (size > available) ? available : size;
     queue_head = (queue_head + size) % UART_QUEUE_SIZE;
 }
 
-void Queue_Process(void) {
-    while (Queue_Available() >= 2) {
-        uint8_t *data = Queue_Peek();
+void RX_Queue_Process(void) {
+    while (RX_Queue_Available() >= 2) {
+        uint8_t *data = RX_Queue_Peek();
 
         if (data == NULL)
         	break;
 
         uint8_t ptype = data[0];
-        uint16_t payload_length = data[1];
-		uint16_t total_packet_size = OPCODE_OFFSET + LENGTH_OFFSET + payload_length;
-//		uint16_t total_packet_size += CRC_LENGTH; // Later......
-//      uint8_t crc = data[total_packet_size - 1]; // Add to Queue_Validate_Packet
+        uint8_t payload_length = data[1];
+		uint16_t total_packet_size = OPCODE_OFFSET + LENGTH_OFFSET + payload_length + CRC_LEN;
 
-        if (!Queue_Validate_Packet(data, ptype, total_packet_size)) {
-			Queue_Pop(1);
+		if (RX_Queue_Available() < total_packet_size)
+			break;
+
+		uint16_t received_crc = (data[total_packet_size - 2] << 8) | data[total_packet_size - 1];
+
+        if (!RX_Queue_Validate_Packet(data, ptype, total_packet_size, received_crc)) {
+			RX_Queue_Pop(1);
 			continue;
         }
-
-		if (Queue_Available() < total_packet_size)
-			break;
 
 #ifdef DEBUG
 		DEBUG_receive_to_send_timestamp = Get_Timestamp();
@@ -501,12 +501,12 @@ void Queue_Process(void) {
 		DEBUG_receive_to_send_flag = false;
 #endif
 
-		Queue_Pop(total_packet_size);
+		RX_Queue_Pop(total_packet_size);
 
     }
 }
 
-bool Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packet_size) {
+bool RX_Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packet_size, uint16_t received_crc) {
 	if (ptype > VALID_OPCODES) {
 #ifdef DEBUG
 		printf("Invalid opcode 0x%02X at offset 0\n", ptype);
@@ -557,12 +557,12 @@ bool Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packet_s
 		break;
 	}
 
-//	uint8_t calculated_crc = Calculate_CRC8(data, total_packet_size - 1);
-//	if (crc != calculated_crc) {
-//#ifdef DEBUG
-//		printf("Calculated CRC = %d, got CRC = %d", calculated_crc, crc);
-//#endif
-//		return FAIL;
-//	}
+	uint16_t calculated_crc = Calculate_CRC16(data, total_packet_size - CRC_LEN);
+	if (received_crc != calculated_crc) {
+#ifdef DEBUG
+		printf("Calculated CRC = %d, got CRC = %d\n", calculated_crc, received_crc);
+#endif
+		return FAIL;
+	}
 	return SUCCESS;
 }

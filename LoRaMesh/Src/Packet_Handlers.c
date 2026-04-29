@@ -11,9 +11,15 @@ static uint8_t offset = 0;
 static uint8_t rx_data[256];
 static uint8_t payload_length = 0;
 
-void Mesh_Send_Data(uint16_t destination_id,
-		uint8_t *data, uint16_t receiver_id,
-		uint16_t source_id, uint32_t message_id, uint8_t TTL, uint8_t data_length) {
+void Mesh_Send_Data(
+		uint16_t receiver_id,
+		uint16_t source_id,
+		uint16_t destination_id,
+		uint32_t message_id,
+		uint8_t TTL,
+		uint8_t data_length,
+		uint8_t *data
+		) {
 #ifdef DEBUG
 	printf("Building a Data Packet\n");
 #endif
@@ -42,12 +48,18 @@ void Mesh_Send_Data(uint16_t destination_id,
 	packet_arr[2] = my_channel;
 
 	Format_Packet_Data(tosend, packet_arr + LORA_OFFSET);
-	LoRa_SendData(packet_arr, DATA_PKT_LEN + data_length);
+	TX_Queue_Push(packet_arr, DATA_PKT_LEN + data_length, DATA_PACKET, 200, message_id, 3);
 	offset = 0;
 }
 
-void Mesh_Send_RREQ(uint16_t destination_id, uint32_t destination_sequence_number, uint16_t source_id,
-		uint32_t source_sequence_number, uint8_t num_hops, uint32_t rreq_id) {
+void Mesh_Send_RREQ(
+		uint16_t source_id,
+		uint16_t destination_id,
+		uint32_t source_sequence_number,
+		uint32_t destination_sequence_number,
+		uint32_t rreq_id,
+		uint8_t num_hops
+		) {
 
 #ifdef DEBUG
 	printf("Building an RREQ Packet\n");
@@ -78,11 +90,18 @@ void Mesh_Send_RREQ(uint16_t destination_id, uint32_t destination_sequence_numbe
 	packet_arr[2] = my_channel;
 
 	Format_Packet_RREQ(tosend, packet_arr + LORA_OFFSET);
-	LoRa_SendData(packet_arr, RREQ_PKT_LEN);
+	TX_Queue_Push(packet_arr, RREQ_PKT_LEN, RREQ_PACKET, 255, 0, 0);
 	offset = 0;
 }
 
-void Mesh_Send_RREP(uint16_t next_hop_to_source, uint16_t rreq_source_id, uint16_t responder_id, uint8_t TTL, uint8_t num_hops, uint32_t responder_sequence_number) {
+void Mesh_Send_RREP(
+		uint16_t next_hop_to_source,
+		uint16_t rreq_source_id,
+		uint16_t responder_id,
+		uint32_t responder_sequence_number,
+		uint8_t TTL,
+		uint8_t num_hops
+		) {
 #ifdef DEBUG
 	printf("Building an RREP Packet\n");
 #endif
@@ -109,12 +128,17 @@ void Mesh_Send_RREP(uint16_t next_hop_to_source, uint16_t rreq_source_id, uint16
 	packet_arr[2] = my_channel;
 
 	Format_Packet_RREP(tosend, packet_arr + LORA_OFFSET);
-	LoRa_SendData(packet_arr, RREP_PKT_LEN);
+	TX_Queue_Push(packet_arr, RREP_PKT_LEN, RREP_PACKET, 100, 0, 0);
 
 	offset = 0;
 }
 
-void Mesh_Send_RERR(uint16_t receiver_id, uint16_t *invalidated_dests, uint32_t *invalidated_seq_nums, uint8_t dest_count, uint8_t TTL) {
+void Mesh_Send_RERR(
+		uint16_t receiver_id,
+		uint8_t dest_count,
+		uint16_t *invalidated_dests,
+		uint32_t *invalidated_seq_nums
+		) {
 #ifdef DEBUG
 	printf("Building an RERR Packet\n");
 #endif
@@ -149,12 +173,20 @@ void Mesh_Send_RERR(uint16_t receiver_id, uint16_t *invalidated_dests, uint32_t 
 	packet_arr[2] = my_channel;
 
 	Format_Packet_RERR(tosend, packet_arr + LORA_OFFSET);
-	LoRa_SendData(packet_arr, RRER_PKT_LEN);
+	TX_Queue_Push(packet_arr, RRER_PKT_LEN, RERR_PACKET, 255, 0, 0);
 
 	offset = 0;
 }
 
-void Mesh_Send_Ping(uint16_t receiver_id, uint16_t destination_id, uint16_t source_id, uint32_t message_id, uint8_t TTL, uint8_t request_or_reply, uint32_t timestamp_ms) {
+void Mesh_Send_Ping(
+		uint16_t receiver_id,
+		uint16_t source_id,
+		uint16_t destination_id,
+		uint32_t message_id,
+		uint8_t TTL,
+		uint8_t request_or_reply,
+		uint32_t timestamp_ms
+		) {
 
 #ifdef DEBUG
 	printf("Building a PING Packet\n");
@@ -183,11 +215,16 @@ void Mesh_Send_Ping(uint16_t receiver_id, uint16_t destination_id, uint16_t sour
 	packet_arr[2] = my_channel;
 
 	Format_Packet_Ping(tosend, packet_arr + LORA_OFFSET);
-	LoRa_SendData(packet_arr, PING_PKT_LEN);
+	TX_Queue_Push(packet_arr, PING_PKT_LEN, PING_PACKET, 180, message_id, 3);
 	offset = 0;
 }
 
-void Mesh_Send_ACK(uint16_t receiver_id, uint16_t destination_id, uint32_t message_id) {
+void Mesh_Send_ACK(
+		uint16_t receiver_id,
+		uint16_t source_id,
+		uint16_t destination_id,
+		uint32_t message_id
+		) {
 #ifdef DEBUG
 	printf("Building an ACK Packet\n");
 #endif
@@ -211,7 +248,7 @@ void Mesh_Send_ACK(uint16_t receiver_id, uint16_t destination_id, uint32_t messa
 	packet_arr[2] = my_channel;
 
 	Format_Packet_ACK(tosend, packet_arr + LORA_OFFSET);
-	LoRa_SendData(packet_arr, ACK_PKT_LEN);
+	TX_Queue_Push(packet_arr, ACK_PKT_LEN, ACK_PACKET, 254, 0, 0);
 	offset = 0;
 }
 
@@ -268,7 +305,7 @@ void Format_Packet_Data(struct data_packet packet, uint8_t packet_arr[]) {
 
 	Write_uint8(packet_arr, DATA_PACKET);
 	Write_uint8(packet_arr, Start_Length_Count());
-	Write_uint8(packet_arr, 0);
+	Write_uint16(packet_arr, 0);
 
 	Write_uint16(packet_arr, my_id);
 	Write_uint16(packet_arr, packet.receiver_id);
@@ -281,6 +318,9 @@ void Format_Packet_Data(struct data_packet packet, uint8_t packet_arr[]) {
 
 	End_Length_Count(packet_arr);
 
+    uint16_t crc = Calculate_CRC16(packet_arr, offset);
+    Write_uint16(packet_arr, crc);
+
 	offset = 0;
 }
 
@@ -289,7 +329,7 @@ void Format_Packet_RREQ(struct rreq_packet packet, uint8_t packet_arr[]) {
 
 	Write_uint8(packet_arr, RREQ_PACKET);
 	Write_uint8(packet_arr, Start_Length_Count());
-	Write_uint8(packet_arr, 0);
+	Write_uint16(packet_arr, 0);
 
 	Write_uint8(packet_arr, packet.hop_count);
 	Write_uint16(packet_arr, my_id);
@@ -301,6 +341,9 @@ void Format_Packet_RREQ(struct rreq_packet packet, uint8_t packet_arr[]) {
 
 	End_Length_Count(packet_arr);
 
+    uint16_t crc = Calculate_CRC16(packet_arr, offset);
+    Write_uint16(packet_arr, crc);
+
 	offset = 0;
 }
 
@@ -309,7 +352,7 @@ void Format_Packet_RREP(struct rrep_packet packet, uint8_t packet_arr[]) {
 
 	Write_uint8(packet_arr, RREP_PACKET);
 	Write_uint8(packet_arr, Start_Length_Count());
-	Write_uint8(packet_arr, 0);
+	Write_uint16(packet_arr, 0);
 
 	Write_uint8(packet_arr, packet.hop_count);
 	Write_uint16(packet_arr, my_id);
@@ -321,6 +364,9 @@ void Format_Packet_RREP(struct rrep_packet packet, uint8_t packet_arr[]) {
 
 	End_Length_Count(packet_arr);
 
+    uint16_t crc = Calculate_CRC16(packet_arr, offset);
+    Write_uint16(packet_arr, crc);
+
 	offset = 0;
 }
 
@@ -329,7 +375,7 @@ void Format_Packet_RERR(struct rerr_packet packet, uint8_t packet_arr[]) {
 
 	Write_uint8(packet_arr, RERR_PACKET);
 	Write_uint8(packet_arr, Start_Length_Count());
-	Write_uint8(packet_arr, 0);
+	Write_uint16(packet_arr, 0);
 
 	Write_uint16(packet_arr, my_id);
 	Write_uint8(packet_arr, packet.num_unreachable_dests);
@@ -341,6 +387,9 @@ void Format_Packet_RERR(struct rerr_packet packet, uint8_t packet_arr[]) {
 
 	End_Length_Count(packet_arr);
 
+    uint16_t crc = Calculate_CRC16(packet_arr, offset);
+    Write_uint16(packet_arr, crc);
+
 	offset = 0;
 }
 
@@ -349,7 +398,7 @@ void Format_Packet_Ping(struct ping_packet packet, uint8_t packet_arr[]) {
 
 	Write_uint8(packet_arr, PING_PACKET);
 	Write_uint8(packet_arr, Start_Length_Count());
-	Write_uint8(packet_arr, 0);
+	Write_uint16(packet_arr, 0);
 
 	Write_uint16(packet_arr, my_id);
 	Write_uint16(packet_arr, packet.receiver_id);
@@ -362,6 +411,9 @@ void Format_Packet_Ping(struct ping_packet packet, uint8_t packet_arr[]) {
 
 	End_Length_Count(packet_arr);
 
+    uint16_t crc = Calculate_CRC16(packet_arr, offset);
+    Write_uint16(packet_arr, crc);
+
 	offset = 0;
 }
 
@@ -370,14 +422,18 @@ void Format_Packet_ACK(struct ack_packet packet, uint8_t packet_arr[]) {
 
 	Write_uint8(packet_arr, ACK_PACKET);
 	Write_uint8(packet_arr, Start_Length_Count());
-	Write_uint8(packet_arr, 0);
+	Write_uint16(packet_arr, 0);
 
 	Write_uint16(packet_arr, my_id);
 	Write_uint16(packet_arr, packet.receiver_id);
+	Write_uint16(packet_arr, packet.source_id);
 	Write_uint16(packet_arr, packet.destination_id);
 	Write_uint32(packet_arr, packet.message_id);
 
 	End_Length_Count(packet_arr);
+
+    uint16_t crc = Calculate_CRC16(packet_arr, offset);
+    Write_uint16(packet_arr, crc);
 
 	offset = 0;
 }
@@ -393,7 +449,7 @@ struct data_packet Unpack_Packet_Data(uint8_t parr[], uint8_t data_length,
 	//	uint8_t payload_length =
 	Read_uint8(parr);
 	//	uint8_t reserved =
-	Read_uint8(parr);
+	Read_uint16(parr);
 
 	packet.transmitter_id = Read_uint16(parr);
 	packet.receiver_id = Read_uint16(parr);
@@ -430,7 +486,7 @@ struct rreq_packet Unpack_Packet_RREQ(uint8_t parr[]) {
 	//	uint8_t payload_length =
 	Read_uint8(parr);
 	//	uint8_t reserved =
-	Read_uint8(parr);
+	Read_uint16(parr);
 
 	packet.hop_count = Read_uint8(parr);
 	packet.transmitter_id = Read_uint16(parr);
@@ -463,7 +519,7 @@ struct rrep_packet Unpack_Packet_RREP(uint8_t parr[]) {
 //	uint8_t payload_length =
 	Read_uint8(parr);
 //	uint8_t reserved =
-	Read_uint8(parr);
+	Read_uint16(parr);
 
 	packet.hop_count = Read_uint8(parr);
 	packet.transmitter_id = Read_uint16(parr);
@@ -495,7 +551,7 @@ struct rerr_packet Unpack_Packet_RERR(uint8_t parr[]) {
 	//	uint8_t payload_length =
 		Read_uint8(parr);
 	//	uint8_t reserved =
-		Read_uint8(parr);
+		Read_uint16(parr);
 
 		packet.transmitter_id = Read_uint16(parr);
 		packet.num_unreachable_dests = Read_uint8(parr);
@@ -526,7 +582,7 @@ struct ping_packet Unpack_Packet_Ping(uint8_t parr[]) {
 //	uint8_t payload_length =
 	Read_uint8(parr);
 //	uint8_t reserved =
-	Read_uint8(parr);
+	Read_uint16(parr);
 
 	packet.transmitter_id = Read_uint16(parr);
 	packet.receiver_id = Read_uint16(parr);
@@ -559,10 +615,11 @@ struct ack_packet Unpack_Packet_ACK(uint8_t parr[]) {
 //	uint8_t payload_length =
 	Read_uint8(parr);
 //	uint8_t reserved =
-	Read_uint8(parr);
+	Read_uint16(parr);
 
 	packet.transmitter_id = Read_uint16(parr);
 	packet.receiver_id = Read_uint16(parr);
+	packet.source_id = Read_uint16(parr);
 	packet.destination_id = Read_uint16(parr);
 	packet.message_id = Read_uint32(parr);
 
@@ -577,6 +634,27 @@ struct ack_packet Unpack_Packet_ACK(uint8_t parr[]) {
 #endif
 	return packet;
 }
+
+#define CRC_POLYNOMIAL 0x1021
+
+uint16_t Calculate_CRC16(const uint8_t *data, uint16_t length) {
+    uint16_t crc = 0xFFFF;
+
+    for (uint16_t i = 0; i < length; i++) {
+        crc ^= (data[i] << 8);
+
+        for (uint8_t j = 0; j < 8; j++) {
+        	if (crc & 0x8000) {
+        		crc = (crc << 1) ^ CRC_POLYNOMIAL;
+        	}
+        	else {
+        		crc = crc << 1;
+        	}
+        }
+    }
+    return crc & 0xFFFF;
+}
+
 
 void Receive_Packet_Handler(uint8_t packet_data[], uint8_t plength, uint8_t ptype) {
 #ifdef DEBUG
@@ -665,8 +743,12 @@ void Receive_Packet_Handler_RREQ(uint8_t packet_data[], uint8_t plength) {
 		printf("Sending reply back to %d (through transmitter %d) since I am the destination\n",
 				pkt.source_id, pkt.transmitter_id);
 #endif
-		Mesh_Send_RREP(pkt.transmitter_id, pkt.source_id, my_id, 0, 0,
-				Increment_Sequence_Number());
+		Mesh_Send_RREP(pkt.transmitter_id,
+				pkt.source_id,
+				my_id,
+				Increment_Sequence_Number(),
+				MAX_HOPS_TTL,
+				0);
 		return;
 	}
 	int8_t route_idx = Route_Exists(pkt.destination_id);
@@ -675,14 +757,21 @@ void Receive_Packet_Handler_RREQ(uint8_t packet_data[], uint8_t plength) {
 		printf("Sending reply back to %d by the info from my routing table\n",
 				pkt.source_id);
 #endif
-		Mesh_Send_RREP(pkt.transmitter_id, pkt.source_id, pkt.destination_id,
-				routing_table[route_idx].hop_count + 1, 0,
-				routing_table[route_idx].destination_sequence_number);
+		Mesh_Send_RREP(pkt.transmitter_id,
+				pkt.source_id,
+				pkt.destination_id,
+				routing_table[route_idx].destination_sequence_number,
+				MAX_HOPS_TTL,
+				routing_table[route_idx].hop_count + 1);
 		return;
 	}
 	if (pkt.hop_count != 255)
-		Mesh_Send_RREQ(pkt.destination_id, pkt.destination_sequence_number, pkt.source_id,
-			pkt.source_sequence_number, pkt.hop_count + 1, pkt.rreq_id);
+		Mesh_Send_RREQ(pkt.source_id,
+				pkt.destination_id,
+				pkt.source_sequence_number,
+				pkt.destination_sequence_number,
+				pkt.rreq_id,
+				pkt.hop_count + 1);
 }
 
 void Receive_Packet_Handler_Hello(uint16_t source_id) {
@@ -713,10 +802,12 @@ void Receive_Packet_Handler_RREP(uint8_t packet_data[], uint8_t plength) {
 		if (reverse_route_idx != -1 && pkt.TTL != 0) {
 			Add_To_Precursor_List(reverse_route_idx, pkt.transmitter_id);
 
-			Mesh_Send_RREP(
-					routing_table[reverse_route_idx].next_hop_destination_id,
-					pkt.source_id, pkt.responder_id, pkt.TTL - 1,
-					pkt.hop_count + 1, pkt.responder_sequence_number);
+			Mesh_Send_RREP(routing_table[reverse_route_idx].next_hop_destination_id,
+					pkt.source_id,
+					pkt.responder_id,
+					pkt.responder_sequence_number,
+					pkt.TTL - 1,
+					pkt.hop_count + 1);
 		}
 		// In case we didn't receive a RREQ, but we know that transmitter did - therefore transmitter knows how to get to the destination
 		Update_Route_Table(pkt.source_id, 0, pkt.hop_count + 1, pkt.transmitter_id);
@@ -800,7 +891,10 @@ void Propagate_RERR_Upstream(uint16_t *invalidated_dests, uint8_t dest_count) {
 		}
 
 		for (uint8_t i = 0; i < precursor_count; i++) {
-			Mesh_Send_RERR(precursor_nodes[i], invalidated_dests, seq_nums, dest_count, MAX_HOPS_TTL);
+			Mesh_Send_RERR(precursor_nodes[i],
+					dest_count,
+					invalidated_dests,
+					seq_nums);
 #ifdef DEBUG
 			printf("\tSent RERR to precursor %d\n", precursor_nodes[i]);
 #endif
@@ -812,9 +906,12 @@ void Propagate_RERR_Upstream(uint16_t *invalidated_dests, uint8_t dest_count) {
 
 void Receive_Packet_Handler_Data(uint8_t packet_data[], uint8_t plength) {
 	volatile struct data_packet pkt;
-	pkt = Unpack_Packet_Data(packet_data, (plength - DATA_BASE_PKT_LEN), rx_data);
+	pkt = Unpack_Packet_Data(packet_data, (plength - (DATA_PKT_LEN - LORA_OFFSET)), rx_data);
 
-	Mesh_Send_ACK(pkt.transmitter_id, pkt.destination_id, pkt.message_id);
+	Mesh_Send_ACK(pkt.transmitter_id,
+			my_id,
+			pkt.destination_id,
+			pkt.message_id);
 	if (pkt.destination_id == my_id) {
 		DATA_RX_HANDLER(pkt);
 	} else {
@@ -824,11 +921,13 @@ void Receive_Packet_Handler_Data(uint8_t packet_data[], uint8_t plength) {
 			Add_To_Precursor_List(route_idx, pkt.transmitter_id);
 			uint16_t next_hop = routing_table[route_idx].next_hop_destination_id;
 
-			Pending_Messages_Table_Add_Forwarded(next_hop, pkt.destination_id, pkt.source_id,
-					pkt.message_id, DATA_PACKET, pkt.TTL, 0, pkt.packet_data, pkt.data_length);
-			Mesh_Send_Data(pkt.destination_id, pkt.packet_data, next_hop,
-					pkt.source_id, pkt.message_id, pkt.TTL - 1,
-					pkt.data_length);
+			Mesh_Send_Data(next_hop,
+					pkt.source_id,
+					pkt.destination_id,
+					pkt.message_id,
+					pkt.TTL - 1,
+					pkt.data_length,
+					pkt.packet_data);
 		}
 	}
 }
@@ -837,12 +936,20 @@ void Receive_Packet_Handler_Ping(uint8_t packet_data[], uint8_t plength) {
 	volatile struct ping_packet pkt;
 	pkt = Unpack_Packet_Ping(packet_data);
 
-	Mesh_Send_ACK(pkt.transmitter_id, pkt.destination_id, pkt.message_id);
+	Mesh_Send_ACK(pkt.transmitter_id,
+			my_id,
+			pkt.destination_id,
+			pkt.message_id);
+
 	if (pkt.destination_id == my_id) {
 		if (pkt.request_or_reply == PING_REQUEST) {
-			Pending_Messages_Table_Add_Forwarded(pkt.transmitter_id, pkt.source_id, my_id, pkt.message_id, PING_PACKET, MAX_HOPS_TTL, PING_REPLY, NULL, 0);
-
-			Mesh_Send_Ping(pkt.transmitter_id, pkt.source_id, pkt.destination_id, pkt.message_id, MAX_HOPS_TTL, PING_REPLY, pkt.timestamp_ms);
+			Mesh_Send_Ping(pkt.transmitter_id,
+					my_id,
+					pkt.source_id,
+					pkt.message_id,
+					MAX_HOPS_TTL,
+					PING_REPLY,
+					pkt.timestamp_ms);
 		} else {
 			printf("[T] Received ping reply from node id:%d. Latency: %" PRIu32 "ms\n", pkt.source_id, Get_Timestamp() - pkt.timestamp_ms);
 			return;
@@ -851,11 +958,13 @@ void Receive_Packet_Handler_Ping(uint8_t packet_data[], uint8_t plength) {
 		int8_t route_idx = Route_Exists(pkt.destination_id);
 
 		if (route_idx != -1 && pkt.TTL != 0) {
-			uint16_t next_hop = routing_table[route_idx].next_hop_destination_id;
-
-			Pending_Messages_Table_Add_Forwarded(next_hop, pkt.destination_id, pkt.source_id, pkt.message_id, PING_PACKET, pkt.request_or_reply, pkt.TTL, NULL, 0);
-
-			Mesh_Send_Ping(routing_table[route_idx].next_hop_destination_id, routing_table[route_idx].destination_id, pkt.source_id, pkt.message_id, pkt.TTL - 1, pkt.request_or_reply, pkt.timestamp_ms);
+			Mesh_Send_Ping(routing_table[route_idx].next_hop_destination_id,
+					pkt.source_id,
+					pkt.destination_id,
+					pkt.message_id,
+					pkt.TTL - 1,
+					pkt.request_or_reply,
+					pkt.timestamp_ms);
 		}
 	}
 
@@ -867,15 +976,7 @@ void Receive_Packet_Handler_ACK(uint8_t packet_data[], uint8_t plength) {
 	pkt = Unpack_Packet_ACK(packet_data);
 
 	if (pkt.receiver_id == my_id) {
-		for (int i = 0; i < pending_messages_table_entries; i++) {
-			if (pending_messages_table[i].message_id == pkt.message_id && pending_messages_table[i].ack_received == 0) {
-#ifdef DEBUG
-				printf("ACK received for message ID %" PRIu32 " from %d\n", pkt.message_id, pkt.transmitter_id);
-#endif
-				pending_messages_table[i].ack_received = 1;
-				break;
-			}
-		}
+		TX_Queue_Handle_ACK(pkt.message_id);
 	}
 }
 

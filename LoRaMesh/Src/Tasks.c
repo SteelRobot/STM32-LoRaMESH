@@ -14,10 +14,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
 void Process_Tasks(void) {
 	//Process incoming packets queue
-	Queue_Process();
+	RX_Queue_Process();
 
-	// Each 1000ms
-	if (ticks % 80 == 0) {
-		Pending_Messages_Table_Process();
+	// Each 500ms
+	if (ticks % 40 == 0) {
+		TX_Queue_Process();
 	}
 }
