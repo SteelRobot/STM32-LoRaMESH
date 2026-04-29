@@ -142,11 +142,11 @@ void LoRa_Set_Encryption(uint16_t key);
 void LoRa_Start_Receive(void);
 void Process_LoRa_Reply(void);
 
-void Queue_Push(uint8_t *data, uint16_t size);
-uint16_t Queue_Available(void);
-uint8_t* Queue_Peek(void);
-void Queue_Pop(uint16_t size);
-void Queue_Process(void);
-bool Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packet_size);
+void RX_Queue_Push(uint8_t *data, uint16_t size);
+uint16_t RX_Queue_Available(void);
+uint8_t* RX_Queue_Peek(void);
+void RX_Queue_Pop(uint16_t size);
+void RX_Queue_Process(void);
+bool RX_Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packet_size, uint16_t received_crc);
 
 #endif /* INC_LORA_H_ */
