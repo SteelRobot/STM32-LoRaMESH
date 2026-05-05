@@ -70,12 +70,12 @@ void Mesh_Send_RREQ(
 
 	struct rreq_packet tosend;
 	tosend.transmitter_id = my_id;
-	tosend.destination_id = destination_id;
 	tosend.source_id = source_id;
-	tosend.hop_count = num_hops;
+	tosend.destination_id = destination_id;
 	tosend.source_sequence_number = source_sequence_number;
 	tosend.destination_sequence_number = destination_sequence_number;
 	tosend.rreq_id = rreq_id;
+	tosend.hop_count = num_hops;
 
 #ifdef DEBUG
 	printf("\tnum_hops=%d transmitter_id=%d destination_id=%d source_id=%d\n", num_hops, my_id, destination_id, source_id);
@@ -113,9 +113,9 @@ void Mesh_Send_RREP(
 	tosend.receiver_id = next_hop_to_source;
 	tosend.source_id = rreq_source_id;
 	tosend.responder_id = responder_id;
+	tosend.responder_sequence_number = responder_sequence_number;
 	tosend.TTL = TTL;
 	tosend.hop_count = num_hops;
-	tosend.responder_sequence_number = responder_sequence_number;
 
 #ifdef DEBUG
 	printf("\tnum_hops=%d rreq_source_id=%d responder_id=%d\n", num_hops, rreq_source_id, responder_id);
@@ -197,8 +197,8 @@ void Mesh_Send_Ping(
 	struct ping_packet tosend;
 	tosend.transmitter_id = my_id;
 	tosend.receiver_id = receiver_id;
-	tosend.destination_id = destination_id;
 	tosend.source_id = source_id;
+	tosend.destination_id = destination_id;
 	tosend.message_id = message_id;
 	tosend.TTL = TTL;
 	tosend.request_or_reply = request_or_reply;
@@ -309,8 +309,8 @@ void Format_Packet_Data(struct data_packet packet, uint8_t packet_arr[]) {
 
 	Write_uint16(packet_arr, my_id);
 	Write_uint16(packet_arr, packet.receiver_id);
-	Write_uint16(packet_arr, packet.destination_id);
 	Write_uint16(packet_arr, packet.source_id);
+	Write_uint16(packet_arr, packet.destination_id);
 	Write_uint32(packet_arr, packet.message_id);
 	Write_uint8(packet_arr, packet.TTL);
 	memcpy(&packet_arr[offset], packet.packet_data, packet.data_length);
@@ -331,13 +331,13 @@ void Format_Packet_RREQ(struct rreq_packet packet, uint8_t packet_arr[]) {
 	Write_uint8(packet_arr, Start_Length_Count());
 	Write_uint16(packet_arr, 0);
 
-	Write_uint8(packet_arr, packet.hop_count);
 	Write_uint16(packet_arr, my_id);
-	Write_uint32(packet_arr, packet.rreq_id);
-	Write_uint16(packet_arr, packet.destination_id);
-	Write_uint32(packet_arr, packet.destination_sequence_number);
 	Write_uint16(packet_arr, packet.source_id);
+	Write_uint16(packet_arr, packet.destination_id);
+	Write_uint32(packet_arr, packet.rreq_id);
 	Write_uint32(packet_arr, packet.source_sequence_number);
+	Write_uint32(packet_arr, packet.destination_sequence_number);
+	Write_uint8(packet_arr, packet.hop_count);
 
 	End_Length_Count(packet_arr);
 
@@ -354,13 +354,13 @@ void Format_Packet_RREP(struct rrep_packet packet, uint8_t packet_arr[]) {
 	Write_uint8(packet_arr, Start_Length_Count());
 	Write_uint16(packet_arr, 0);
 
-	Write_uint8(packet_arr, packet.hop_count);
 	Write_uint16(packet_arr, my_id);
 	Write_uint16(packet_arr, packet.receiver_id);
 	Write_uint16(packet_arr, packet.source_id);
 	Write_uint16(packet_arr, packet.responder_id);
 	Write_uint32(packet_arr, packet.responder_sequence_number);
 	Write_uint8(packet_arr, packet.TTL);
+	Write_uint8(packet_arr, packet.hop_count);
 
 	End_Length_Count(packet_arr);
 
@@ -402,8 +402,8 @@ void Format_Packet_Ping(struct ping_packet packet, uint8_t packet_arr[]) {
 
 	Write_uint16(packet_arr, my_id);
 	Write_uint16(packet_arr, packet.receiver_id);
-	Write_uint16(packet_arr, packet.destination_id);
 	Write_uint16(packet_arr, packet.source_id);
+	Write_uint16(packet_arr, packet.destination_id);
 	Write_uint32(packet_arr, packet.message_id);
 	Write_uint8(packet_arr, packet.TTL);
 	Write_uint8(packet_arr, packet.request_or_reply);
@@ -453,8 +453,8 @@ struct data_packet Unpack_Packet_Data(uint8_t parr[], uint8_t data_length,
 
 	packet.transmitter_id = Read_uint16(parr);
 	packet.receiver_id = Read_uint16(parr);
-	packet.destination_id = Read_uint16(parr);
 	packet.source_id = Read_uint16(parr);
+	packet.destination_id = Read_uint16(parr);
 	packet.message_id = Read_uint32(parr);
 	packet.TTL = Read_uint8(parr);
 
@@ -488,13 +488,13 @@ struct rreq_packet Unpack_Packet_RREQ(uint8_t parr[]) {
 	//	uint8_t reserved =
 	Read_uint16(parr);
 
-	packet.hop_count = Read_uint8(parr);
 	packet.transmitter_id = Read_uint16(parr);
-	packet.rreq_id = Read_uint32(parr);
-	packet.destination_id = Read_uint16(parr);
-	packet.destination_sequence_number = Read_uint32(parr);
 	packet.source_id = Read_uint16(parr);
+	packet.destination_id = Read_uint16(parr);
+	packet.rreq_id = Read_uint32(parr);
 	packet.source_sequence_number = Read_uint32(parr);
+	packet.destination_sequence_number = Read_uint32(parr);
+	packet.hop_count = Read_uint8(parr);
 
 	offset = 0;
 
@@ -521,13 +521,13 @@ struct rrep_packet Unpack_Packet_RREP(uint8_t parr[]) {
 //	uint8_t reserved =
 	Read_uint16(parr);
 
-	packet.hop_count = Read_uint8(parr);
 	packet.transmitter_id = Read_uint16(parr);
 	packet.receiver_id = Read_uint16(parr);
 	packet.source_id = Read_uint16(parr);
 	packet.responder_id = Read_uint16(parr);
 	packet.responder_sequence_number = Read_uint32(parr);
 	packet.TTL = Read_uint8(parr);
+	packet.hop_count = Read_uint8(parr);
 
 	offset = 0;
 
@@ -586,8 +586,8 @@ struct ping_packet Unpack_Packet_Ping(uint8_t parr[]) {
 
 	packet.transmitter_id = Read_uint16(parr);
 	packet.receiver_id = Read_uint16(parr);
-	packet.destination_id = Read_uint16(parr);
 	packet.source_id = Read_uint16(parr);
+	packet.destination_id = Read_uint16(parr);
 	packet.message_id = Read_uint32(parr);
 	packet.TTL = Read_uint8(parr);
 	packet.request_or_reply = Read_uint8(parr);

@@ -91,3 +91,9 @@
 - Addition of a CRC field to further validate packets (if packet type is valid, but CRC is not)
 - Refactored Packet_Formats.h file to make it more readable
 - Refactored functions to make them consistent with each other
+
+## 05/05/2026
+
+- Fixed validation process, so that partial packets aren't rejected
+- Properly implemented RERR packet generation and receive
+- Invalidation of the packet queue too

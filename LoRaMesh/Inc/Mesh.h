@@ -39,13 +39,12 @@ struct tx_queue_entry {
     uint8_t packet_type;
     uint16_t destination_id;
     uint8_t priority;
-    uint32_t timestamp_ms;
     uint32_t message_id;
     uint8_t retry_count;
     uint8_t max_retries;
     uint32_t last_tx_time_ms;
     bool needs_retry;
-    uint8_t ack_received;
+    bool ack_received;
 };
 
 extern struct tx_queue_entry tx_queue[TX_QUEUE_SIZE];
