@@ -114,7 +114,7 @@ void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 }
 
 bool TX_Queue_Push(uint8_t *serialized_data, uint16_t size,
-                      uint8_t type, uint8_t priority,
+                      uint8_t type, uint16_t destination_id, uint8_t priority,
                       uint32_t message_id, uint8_t max_retries) {
     uint8_t next_tail = (tx_queue_tail + 1) % TX_QUEUE_SIZE;
     if (next_tail == tx_queue_head) return FAIL;
@@ -123,6 +123,7 @@ bool TX_Queue_Push(uint8_t *serialized_data, uint16_t size,
     memcpy(tx_queue[tx_queue_tail].packet_data, serialized_data, size);
     tx_queue[tx_queue_tail].packet_size = size;
     tx_queue[tx_queue_tail].packet_type = type;
+    tx_queue[tx_queue_tail].destination_id = destination_id;
     tx_queue[tx_queue_tail].priority = priority;
     tx_queue[tx_queue_tail].message_id = message_id;
     tx_queue[tx_queue_tail].retry_count = 0;
@@ -164,6 +165,25 @@ void TX_Queue_Handle_ACK(uint32_t message_id) {
     }
 }
 
+void TX_Queue_Drop_By_Destination(uint16_t destination_id) {
+    uint8_t i = tx_queue_head;
+
+    while (i != tx_queue_tail) {
+        if (tx_queue[i].destination_id == destination_id &&
+            !tx_queue[i].ack_received) {
+
+            tx_queue[i].ack_received = 1;
+
+#ifdef DEBUG
+            printf("Dropped queued packet to destination %d (type: %d, retries: %d)\n",
+                   destination_id, tx_queue[i].packet_type, tx_queue[i].retry_count);
+#endif
+        }
+        i = (i + 1) % TX_QUEUE_SIZE;
+    }
+}
+
+
 struct tx_queue_entry* TX_Queue_Peek(void) {
     if (tx_queue_head == tx_queue_tail) return NULL;
 
@@ -178,31 +198,60 @@ struct tx_queue_entry* TX_Queue_Peek(void) {
         i = (i + 1) % TX_QUEUE_SIZE;
         check_count++;
     }
-
     return highest;
 }
 
+void TX_Queue_Handle_Packet_Failure(struct tx_queue_entry *pkt) {
+    uint16_t failed_dest = pkt->destination_id;
+    int8_t route_idx = Route_Exists(failed_dest);
+    if (route_idx == -1) return;
+
+    uint16_t dead_next_hop = routing_table[route_idx].next_hop_destination_id;
+    uint16_t invalidated_dests[ROUTING_TABLE_LENGTH];
+    uint8_t invalidated_count = 0;
+
+    for (uint8_t j = 0; j < route_table_entries; j++) {
+        if (routing_table[j].next_hop_destination_id == dead_next_hop &&
+            routing_table[j].expiration_time > 0) {
+
+            routing_table[j].expiration_time = 0;
+            invalidated_dests[invalidated_count] = routing_table[j].destination_id;
+            invalidated_count++;
+        }
+    }
+
+    if (invalidated_count > 0) {
+        for (uint8_t j = 0; j < invalidated_count; j++) {
+            TX_Queue_Drop_By_Destination(invalidated_dests[j]);
+        }
+        Propagate_RERR_Upstream(invalidated_dests, invalidated_count);
+    }
+}
 
 void TX_Queue_Check_Timeouts(uint32_t timeout_ms) {
     uint8_t i = tx_queue_head;
     uint32_t now = HAL_GetTick();
 
     while (i != tx_queue_tail) {
-        if ((tx_queue[i].packet_type == DATA_PACKET ||
-             tx_queue[i].packet_type == PING_PACKET) &&
-            !tx_queue[i].ack_received) {
+        struct tx_queue_entry *pkt = &tx_queue[i];
 
-            if (now - tx_queue[i].last_tx_time_ms > timeout_ms) {
-                if (tx_queue[i].retry_count < tx_queue[i].max_retries) {
-                    tx_queue[i].retry_count++;
-                    tx_queue[i].last_tx_time_ms = now;
-                    tx_queue[i].needs_retry = true;
-                } else {
-                    tx_queue[i].ack_received = 1;
-                    //TODO() Packet was not accepted properly. Send RERR (implement this)
-                }
+        if ((pkt->packet_type != DATA_PACKET && pkt->packet_type != PING_PACKET) ||
+            pkt->ack_received) {
+            i = (i + 1) % TX_QUEUE_SIZE;
+            continue;
+        }
+
+        if (now - pkt->last_tx_time_ms > timeout_ms) {
+            if (pkt->retry_count < pkt->max_retries) {
+                pkt->retry_count++;
+                pkt->last_tx_time_ms = now;
+                pkt->needs_retry = true;
+            } else {
+                TX_Queue_Handle_Packet_Failure(pkt);
+                pkt->ack_received = 1;
             }
         }
+
         i = (i + 1) % TX_QUEUE_SIZE;
     }
 }

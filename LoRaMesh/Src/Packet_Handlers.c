@@ -48,7 +48,7 @@ void Mesh_Send_Data(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_Data(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, DATA_PKT_LEN + data_length, DATA_PACKET, 200, message_id, 3);
+	TX_Queue_Push(packet_arr, DATA_PKT_LEN + data_length, DATA_PACKET, destination_id, 200, message_id, 3);
 	offset = 0;
 }
 
@@ -90,7 +90,7 @@ void Mesh_Send_RREQ(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_RREQ(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, RREQ_PKT_LEN, RREQ_PACKET, 255, 0, 0);
+	TX_Queue_Push(packet_arr, RREQ_PKT_LEN, RREQ_PACKET, destination_id, 255, 0, 0);
 	offset = 0;
 }
 
@@ -128,7 +128,7 @@ void Mesh_Send_RREP(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_RREP(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, RREP_PKT_LEN, RREP_PACKET, 100, 0, 0);
+	TX_Queue_Push(packet_arr, RREP_PKT_LEN, RREP_PACKET, rreq_source_id, 100, 0, 0);
 
 	offset = 0;
 }
@@ -173,7 +173,7 @@ void Mesh_Send_RERR(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_RERR(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, RRER_PKT_LEN, RERR_PACKET, 255, 0, 0);
+	TX_Queue_Push(packet_arr, RRER_PKT_LEN, RERR_PACKET, receiver_id, 255, 0, 0);
 
 	offset = 0;
 }
@@ -215,7 +215,7 @@ void Mesh_Send_Ping(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_Ping(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, PING_PKT_LEN, PING_PACKET, 180, message_id, 3);
+	TX_Queue_Push(packet_arr, PING_PKT_LEN, PING_PACKET, destination_id, 180, message_id, 3);
 	offset = 0;
 }
 
@@ -248,7 +248,7 @@ void Mesh_Send_ACK(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_ACK(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, ACK_PKT_LEN, ACK_PACKET, 254, 0, 0);
+	TX_Queue_Push(packet_arr, ACK_PKT_LEN, ACK_PACKET, destination_id, 254, 0, 0);
 	offset = 0;
 }
 
@@ -841,9 +841,11 @@ void Receive_Packet_Handler_RERR(uint8_t packet_data[], uint8_t plength) {
 	}
 	if (invalidated_count > 0) {
 		Propagate_RERR_Upstream(invalidated_dests, invalidated_count);
+		for (uint8_t i = 0; i < pkt.num_unreachable_dests; i++) {
+			uint16_t unreachable = pkt.unreachable_dests[i].destination_id;
+			TX_Queue_Drop_By_Destination(unreachable);
+		}
 	}
-
-	//Check for unsent packets in the queue/buffer. Will be implemented laterrrrr
 }
 
 void Propagate_RERR_Upstream(uint16_t *invalidated_dests, uint8_t dest_count) {

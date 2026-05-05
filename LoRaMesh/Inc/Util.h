@@ -3,8 +3,6 @@
 
 #ifdef DEBUG
 #include <stdbool.h>
-extern bool DEBUG_receive_to_send_flag;
-extern uint32_t DEBUG_receive_to_send_timestamp;
 extern uint32_t DEBUG_mesh_init_timestamp;
 extern uint32_t DEBUG_lora_init_timestamp;
 #endif
