@@ -479,34 +479,36 @@ void RX_Queue_Process(void) {
         uint8_t payload_length = data[1];
 		uint16_t total_packet_size = OPCODE_OFFSET + LENGTH_OFFSET + payload_length + CRC_LEN;
 
+        if (!RX_Queue_Validate_Packet_Length(data, ptype, total_packet_size)) {
+			RX_Queue_Pop(1);
+			continue;
+        }
+
 		if (RX_Queue_Available() < total_packet_size)
 			break;
 
 		uint16_t received_crc = (data[total_packet_size - 2] << 8) | data[total_packet_size - 1];
 
-        if (!RX_Queue_Validate_Packet(data, ptype, total_packet_size, received_crc)) {
+
+        if (!RX_Queue_Validate_Packet_CRC(data, total_packet_size, received_crc)) {
 			RX_Queue_Pop(1);
 			continue;
         }
 
+
 #ifdef DEBUG
-		DEBUG_receive_to_send_timestamp = Get_Timestamp();
-		DEBUG_receive_to_send_flag = true;
         printf("Valid packet: opcode=0x%02X, payload_len=%d\n", ptype, payload_length);
 #endif
 
 		Receive_Packet_Handler(data, total_packet_size, ptype);
 
-#ifdef DEBUG
-		DEBUG_receive_to_send_flag = false;
-#endif
 
 		RX_Queue_Pop(total_packet_size);
 
     }
 }
 
-bool RX_Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packet_size, uint16_t received_crc) {
+bool RX_Queue_Validate_Packet_Length(uint8_t *data, uint8_t ptype, uint16_t total_packet_size) {
 	if (ptype > VALID_OPCODES) {
 #ifdef DEBUG
 		printf("Invalid opcode 0x%02X at offset 0\n", ptype);
@@ -557,6 +559,10 @@ bool RX_Queue_Validate_Packet(uint8_t *data, uint8_t ptype, uint16_t total_packe
 		break;
 	}
 
+	return SUCCESS;
+}
+
+bool RX_Queue_Validate_Packet_CRC(uint8_t *data, uint16_t total_packet_size, uint16_t received_crc) {
 	uint16_t calculated_crc = Calculate_CRC16(data, total_packet_size - CRC_LEN);
 	if (received_crc != calculated_crc) {
 #ifdef DEBUG
