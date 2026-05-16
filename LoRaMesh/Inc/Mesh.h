@@ -16,6 +16,7 @@
 
 #define PACKET_RETRY_TIME_MS 4000
 #define PACKET_RETRY_AMOUNT 3
+#define PRIORITY_PACKETS_AMOUNT 4
 
 struct route_table_entry {
 	uint16_t destination_id;
@@ -43,8 +44,8 @@ struct tx_queue_entry {
     uint8_t retry_count;
     uint8_t max_retries;
     uint32_t last_tx_time_ms;
-    bool needs_retry;
-    bool ack_received;
+    bool ready_to_send;
+    bool done_processing;
 };
 
 extern struct tx_queue_entry tx_queue[TX_QUEUE_SIZE];

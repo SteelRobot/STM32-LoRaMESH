@@ -114,69 +114,76 @@ void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 }
 
 bool TX_Queue_Push(uint8_t *serialized_data, uint16_t size,
-                      uint8_t type, uint16_t destination_id, uint8_t priority,
-                      uint32_t message_id, uint8_t max_retries) {
+                   uint8_t type, uint16_t destination_id, uint8_t priority,
+                   uint32_t message_id, uint8_t max_retries) {
     uint8_t next_tail = (tx_queue_tail + 1) % TX_QUEUE_SIZE;
     if (next_tail == tx_queue_head) return FAIL;
     if (size > MAX_PAYLOAD_SIZE) return FAIL;
 
-    memcpy(tx_queue[tx_queue_tail].packet_data, serialized_data, size);
-    tx_queue[tx_queue_tail].packet_size = size;
-    tx_queue[tx_queue_tail].packet_type = type;
-    tx_queue[tx_queue_tail].destination_id = destination_id;
-    tx_queue[tx_queue_tail].priority = priority;
-    tx_queue[tx_queue_tail].message_id = message_id;
-    tx_queue[tx_queue_tail].retry_count = 0;
-    tx_queue[tx_queue_tail].max_retries = max_retries;
-    tx_queue[tx_queue_tail].last_tx_time_ms = 0;
-    tx_queue[tx_queue_tail].ack_received = 0;
+    struct tx_queue_entry *entry = &tx_queue[tx_queue_tail];
+
+    memcpy(entry->packet_data, serialized_data, size);
+    entry->packet_size = size;
+    entry->packet_type = type;
+    entry->destination_id = destination_id;
+    entry->priority = priority;
+    entry->message_id = message_id;
+    entry->retry_count = 0;
+    entry->max_retries = max_retries;
+    entry->last_tx_time_ms = 0;
+    entry->done_processing = false;
+    entry->ready_to_send = true;
 
     tx_queue_tail = next_tail;
     return SUCCESS;
 }
 
 void TX_Queue_Pop(void) {
-    if (tx_queue_head == tx_queue_tail) return;
+    while (tx_queue_head != tx_queue_tail) {
+        struct tx_queue_entry *pkt = &tx_queue[tx_queue_head];
 
-    struct tx_queue_entry *pkt = &tx_queue[tx_queue_head];
+        bool is_sent_non_retryable = pkt->last_tx_time_ms != 0 &&
+                                      (pkt->packet_type != DATA_PACKET &&
+                                       pkt->packet_type != PING_PACKET);
 
-    if (pkt->packet_type != DATA_PACKET &&
-        pkt->packet_type != PING_PACKET) {
-        tx_queue_head = (tx_queue_head + 1) % TX_QUEUE_SIZE;
-        return;
-    }
-
-    if (pkt->ack_received) {
-        tx_queue_head = (tx_queue_head + 1) % TX_QUEUE_SIZE;
+        if (pkt->done_processing || is_sent_non_retryable) {
+            tx_queue_head = (tx_queue_head + 1) % TX_QUEUE_SIZE;
+        } else {
+            break;
+        }
     }
 }
 
 
 void TX_Queue_Handle_ACK(uint32_t message_id) {
     uint8_t i = tx_queue_head;
+
     while (i != tx_queue_tail) {
-        if (tx_queue[i].message_id == message_id &&
-            (tx_queue[i].packet_type == DATA_PACKET ||
-             tx_queue[i].packet_type == PING_PACKET)) {
-            tx_queue[i].ack_received = 1;
+        struct tx_queue_entry *pkt = &tx_queue[i];
+
+        bool is_ackable = pkt->packet_type == DATA_PACKET || pkt->packet_type == PING_PACKET;
+
+        if (pkt->message_id == message_id && is_ackable) {
+            pkt->done_processing = true;
             return;
         }
         i = (i + 1) % TX_QUEUE_SIZE;
     }
 }
 
+
 void TX_Queue_Drop_By_Destination(uint16_t destination_id) {
     uint8_t i = tx_queue_head;
 
     while (i != tx_queue_tail) {
-        if (tx_queue[i].destination_id == destination_id &&
-            !tx_queue[i].ack_received) {
+        struct tx_queue_entry *pkt = &tx_queue[i];
 
-            tx_queue[i].ack_received = 1;
+        if (pkt->destination_id == destination_id && !pkt->done_processing) {
+            pkt->done_processing = true;
 
 #ifdef DEBUG
-            printf("Dropped queued packet to destination %d (type: %d, retries: %d)\n",
-                   destination_id, tx_queue[i].packet_type, tx_queue[i].retry_count);
+            printf("Dropped packet to %d (type: %d, retries: %d)\n",
+                   destination_id, pkt->packet_type, pkt->retry_count);
 #endif
         }
         i = (i + 1) % TX_QUEUE_SIZE;
@@ -185,21 +192,31 @@ void TX_Queue_Drop_By_Destination(uint16_t destination_id) {
 
 
 struct tx_queue_entry* TX_Queue_Peek(void) {
-    if (tx_queue_head == tx_queue_tail) return NULL;
-
-    struct tx_queue_entry *highest = &tx_queue[tx_queue_head];
+    struct tx_queue_entry *highest = NULL;
     uint8_t check_count = 0;
     uint8_t i = tx_queue_head;
 
-    while (i != tx_queue_tail && check_count < 4) {
-        if (tx_queue[i].priority > highest->priority) {
-            highest = &tx_queue[i];
+    while (i != tx_queue_tail && check_count < PRIORITY_PACKETS_AMOUNT) {
+        struct tx_queue_entry *pkt = &tx_queue[i];
+
+        if (pkt->done_processing) {
+            i = (i + 1) % TX_QUEUE_SIZE;
+            continue;
         }
-        i = (i + 1) % TX_QUEUE_SIZE;
+
         check_count++;
+
+        if (!highest || pkt->priority > highest->priority) {
+            highest = pkt;
+        }
+
+        i = (i + 1) % TX_QUEUE_SIZE;
     }
     return highest;
 }
+
+
+
 
 void TX_Queue_Handle_Packet_Failure(struct tx_queue_entry *pkt) {
     uint16_t failed_dest = pkt->destination_id;
@@ -235,20 +252,24 @@ void TX_Queue_Check_Timeouts(uint32_t timeout_ms) {
     while (i != tx_queue_tail) {
         struct tx_queue_entry *pkt = &tx_queue[i];
 
-        if ((pkt->packet_type != DATA_PACKET && pkt->packet_type != PING_PACKET) ||
-            pkt->ack_received) {
+        if (pkt->done_processing) {
             i = (i + 1) % TX_QUEUE_SIZE;
             continue;
         }
 
-        if (now - pkt->last_tx_time_ms > timeout_ms) {
+        bool is_retryable = (pkt->packet_type == DATA_PACKET || pkt->packet_type == PING_PACKET);
+        if (!is_retryable) {
+            i = (i + 1) % TX_QUEUE_SIZE;
+            continue;
+        }
+
+        if (pkt->last_tx_time_ms != 0 && (now - pkt->last_tx_time_ms) > timeout_ms) {
             if (pkt->retry_count < pkt->max_retries) {
                 pkt->retry_count++;
-                pkt->last_tx_time_ms = now;
-                pkt->needs_retry = true;
+                pkt->ready_to_send = true;
             } else {
                 TX_Queue_Handle_Packet_Failure(pkt);
-                pkt->ack_received = 1;
+                pkt->done_processing = true;
             }
         }
 
@@ -256,26 +277,23 @@ void TX_Queue_Check_Timeouts(uint32_t timeout_ms) {
     }
 }
 
+
 void TX_Queue_Process(void) {
     TX_Queue_Check_Timeouts(PACKET_RETRY_TIME_MS);
 
     struct tx_queue_entry *pkt = TX_Queue_Peek();
-    if (pkt) {
-        if ((pkt->retry_count == 0 && pkt->last_tx_time_ms == 0) || pkt->needs_retry) {
+    if (pkt && pkt->ready_to_send) {
 #ifdef DEBUG
-        	printf("Sending packet from queue. Type: %d\n", pkt->packet_type);
+        printf("Sending packet from queue. Type: %d\n", pkt->packet_type);
 #endif
-            LoRa_SendData(pkt->packet_data, pkt->packet_size);
-            pkt->last_tx_time_ms = HAL_GetTick();
-            pkt->needs_retry = 0;
-        }
-
-        if (pkt->ack_received ||
-            (pkt->packet_type != DATA_PACKET && pkt->packet_type != PING_PACKET)) {
-            TX_Queue_Pop();
-        }
+        LoRa_SendData(pkt->packet_data, pkt->packet_size);
+        pkt->last_tx_time_ms = HAL_GetTick();
+        pkt->ready_to_send = 0;
     }
+
+    TX_Queue_Pop();
 }
+
 
 void Mesh_Send_Hello(void) {
 #ifdef DEBUG

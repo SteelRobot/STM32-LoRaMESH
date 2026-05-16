@@ -958,9 +958,11 @@ void Receive_Packet_Handler_Ping(uint8_t packet_data[], uint8_t plength) {
 		}
 	} else {
 		int8_t route_idx = Route_Exists(pkt.destination_id);
+		Add_To_Precursor_List(route_idx, pkt.transmitter_id);
+		uint16_t next_hop = routing_table[route_idx].next_hop_destination_id;
 
 		if (route_idx != -1 && pkt.TTL != 0) {
-			Mesh_Send_Ping(routing_table[route_idx].next_hop_destination_id,
+			Mesh_Send_Ping(next_hop,
 					pkt.source_id,
 					pkt.destination_id,
 					pkt.message_id,
