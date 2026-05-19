@@ -7,6 +7,8 @@
 #define MAX_PRECURSORS 10
 #define MAX_PENDING_ACKS 10
 #define TX_QUEUE_SIZE 16
+#define MAX_PENDING_MESSAGES 10
+#define PENDING_MSG_TIMEOUT_MS 15000 // ms
 #define RREQ_TABLE_MAX_ENTRIES 10
 #define DEFAULT_ROUTE_EXPIRATION_TIME 300 // Seconds
 #define DEFAULT_RREQ_EXPIRATION_TIME 10 // Seconds
@@ -18,7 +20,7 @@
 #define PACKET_RETRY_AMOUNT 3
 #define PRIORITY_PACKETS_AMOUNT 4
 
-struct route_table_entry {
+typedef struct {
 	uint16_t destination_id;
 	uint32_t destination_sequence_number;
 	uint8_t hop_count;
@@ -26,31 +28,45 @@ struct route_table_entry {
 	uint32_t expiration_time;
 	uint8_t precursor_count;
 	uint16_t precursor_list[MAX_PRECURSORS];
-};
+} route_table_entry;
 
-struct rreq_table_entry {
+typedef struct {
 	uint16_t source_id;
 	uint32_t rreq_id;
 	uint32_t expiration_time;
-};
+} rreq_table_entry;
 
-struct tx_queue_entry {
+typedef struct {
+    uint16_t destination_id;
+    uint8_t data[MAX_PAYLOAD_SIZE];
+    uint8_t data_length;
+    bool is_ping;
+    uint32_t timestamp_ms;
+    bool in_use;
+} pending_message;
+
+typedef struct {
     uint8_t packet_data[MAX_PAYLOAD_SIZE];
     uint16_t packet_size;
     uint8_t packet_type;
     uint16_t destination_id;
+    uint8_t hop_count;
     uint8_t priority;
     uint32_t message_id;
     uint8_t retry_count;
     uint8_t max_retries;
     uint32_t last_tx_time_ms;
     bool ready_to_send;
-    bool done_processing;
-};
 
-extern struct tx_queue_entry tx_queue[TX_QUEUE_SIZE];
+    bool ack_received_hop_by_hop;
+    bool ack_received_end_to_end;
 
-extern struct route_table_entry routing_table[ROUTING_TABLE_LENGTH];
+    bool is_originated;
+} tx_queue_entry;
+
+extern tx_queue_entry tx_queue[TX_QUEUE_SIZE];
+
+extern route_table_entry routing_table[ROUTING_TABLE_LENGTH];
 extern uint8_t route_table_entries;
 extern RTC_TimeTypeDef currentTime;
 extern RTC_DateTypeDef currentDate;
@@ -61,13 +77,19 @@ int8_t Route_Exists(uint16_t id);
 bool RREQ_Table_Contains(uint16_t source_id, uint32_t rreq_id);
 void RREQ_Table_Append(uint16_t source_id, uint32_t rreq_id);
 void Update_RREQ_Expiration(void);
-bool TX_Queue_Push(uint8_t *serialized_data, uint16_t size, uint8_t type, uint16_t destination_id, uint8_t priority, uint32_t message_id, uint8_t max_retries);
+void Buffer_Pending_Message(uint16_t destination_id, uint8_t *data, uint8_t data_length, bool is_ping);
+void Flush_Pending_Messages(uint16_t destination_id);
+bool TX_Queue_Push(uint8_t *serialized_data, uint16_t size,
+                   uint8_t type, uint16_t destination_id,
+//				   uint8_t hop_count,
+				   bool is_originated,
+				   uint8_t priority, uint32_t message_id, uint8_t max_retries);
 void TX_Queue_Pop(void);
-struct tx_queue_entry* TX_Queue_Peek(void);
-void TX_Queue_Handle_ACK(uint32_t message_id);
+tx_queue_entry* TX_Queue_Peek(void);
+int8_t TX_Queue_Find_By_Message_ID(uint32_t message_id);
 void TX_Queue_Drop_By_Destination(uint16_t destination_id);
-void TX_Queue_Handle_Packet_Failure(struct tx_queue_entry *pkt);
-void TX_Queue_Check_Timeouts(uint32_t timeout_ms);
+void TX_Queue_Handle_Packet_Failure(tx_queue_entry *pkt);
+void TX_Queue_Check_Timeouts(void);
 void TX_Queue_Process(void);
 void Update_Route_Table(uint16_t dest_id, uint32_t dest_seq_num, uint8_t num_hops, uint16_t next_hop);
 void Add_To_Precursor_List(uint8_t route_idx, uint16_t precursor_id);

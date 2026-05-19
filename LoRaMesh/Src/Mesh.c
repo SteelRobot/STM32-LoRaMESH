@@ -24,9 +24,11 @@ static uint8_t tx_index = 0;
 
 static uint32_t my_sequence_number = 0;
 static uint32_t rreq_id;
-struct route_table_entry routing_table[ROUTING_TABLE_LENGTH];
-static struct rreq_table_entry rreq_table[RREQ_TABLE_MAX_ENTRIES];
-struct tx_queue_entry tx_queue[TX_QUEUE_SIZE];
+route_table_entry routing_table[ROUTING_TABLE_LENGTH];
+static rreq_table_entry rreq_table[RREQ_TABLE_MAX_ENTRIES];
+tx_queue_entry tx_queue[TX_QUEUE_SIZE];
+
+pending_message pending_buffer[MAX_PENDING_MESSAGES];
 
 // AODV
 // No periodic beaconing
@@ -71,8 +73,8 @@ void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 
 #ifdef DEBUG
 	printf("Adding the message to the pending messages table\n");
-	//Ideally, it actually adds the message to the queue, but I'm not sure how to implement it yet
 #endif
+	bool is_ping = (data_length == 4 && memcmp(data, "ping", 4) == 0);
 	int8_t route_idx = Route_Exists(destination_id);
 	if (route_idx != -1) {
 #ifdef DEBUG
@@ -83,55 +85,131 @@ void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 		for (int i = 0; i < data_length; i++)
 			printf("%c", data[i]);
 		printf("\n++++++++++++++++++++++++++++++++++++++++++\n");
-		if (data_length == 4 && memcmp(data, "ping", 4) == 0)
+		if (is_ping)
 			Mesh_Send_Ping(routing_table[route_idx].next_hop_destination_id,
 					my_id,
 					destination_id,
+//					routing_table[route_idx].hop_count,
 					Generate_Packet_ID(),
 					MAX_HOPS_TTL,
 					PING_REQUEST,
-					Get_Timestamp());
+					Get_Timestamp(),
+					true);
 		else
 			Mesh_Send_Data(routing_table[route_idx].next_hop_destination_id,
 					my_id,
 					destination_id,
+//					routing_table[route_idx].hop_count,
 					Generate_Packet_ID(),
 					MAX_HOPS_TTL,
 					data_length,
-					data);
+					data,
+					true);
 	} else {
 #ifdef DEBUG
 		printf("Route to %d is NOT KNOWN. Sending a RREQ packet and adding the request to the no-route table\n", destination_id);
 #endif
+		Buffer_Pending_Message(destination_id, data, data_length, is_ping);
 
 		Mesh_Send_RREQ(my_id,
 				destination_id,
 				Increment_Sequence_Number(),
 				0,
 				Generate_RREQ_ID(),
-				0);
+				0,
+				true);
 	}
 }
 
+void Buffer_Pending_Message(uint16_t destination_id, uint8_t *data, uint8_t data_length, bool is_ping) {
+
+    for (int i = 0; i < MAX_PENDING_MESSAGES; i++) {
+    	pending_message *message = &pending_buffer[i];
+        if (!message->in_use) {
+        	message->destination_id = destination_id;
+        	message->is_ping = is_ping;
+        	message->timestamp_ms = Get_Timestamp();
+        	message->in_use = true;
+            if (!is_ping) {
+            	message->data_length = data_length;
+            	memcpy(message->data, data, data_length);
+            }
+#ifdef DEBUG
+            printf("Buffered message for node %d\n", destination_id);
+#endif
+            return;
+        }
+    }
+}
+
+void Flush_Pending_Messages(uint16_t destination_id) {
+    int8_t route_idx = Route_Exists(destination_id);
+    if (route_idx == -1) return;
+
+    for (int i = 0; i < MAX_PENDING_MESSAGES; i++) {
+    	pending_message *message = &pending_buffer[i];
+        if (message->in_use && message->destination_id == destination_id) {
+
+            uint32_t age = Get_Timestamp() - message->timestamp_ms;
+            if (age > PENDING_MSG_TIMEOUT_MS) {
+#ifdef DEBUG
+                printf("Discarding stale message for node %d\n", destination_id);
+#endif
+                message->in_use = true;
+                continue;
+            }
+
+            if (message->is_ping)
+                Mesh_Send_Ping(routing_table[route_idx].next_hop_destination_id,
+                        my_id,
+						destination_id,
+//						routing_table[route_idx].hop_count,
+						Generate_Packet_ID(),
+                        MAX_HOPS_TTL,
+						PING_REQUEST,
+						Get_Timestamp(),
+						true);
+            else
+                Mesh_Send_Data(routing_table[route_idx].next_hop_destination_id,
+                        my_id,
+						destination_id,
+//						routing_table[route_idx].hop_count,
+						Generate_Packet_ID(),
+                        MAX_HOPS_TTL,
+						pending_buffer[i].data_length,
+                        pending_buffer[i].data,
+						true);
+
+            message->in_use = false;
+        }
+    }
+}
+
+
 bool TX_Queue_Push(uint8_t *serialized_data, uint16_t size,
-                   uint8_t type, uint16_t destination_id, uint8_t priority,
-                   uint32_t message_id, uint8_t max_retries) {
+                   uint8_t type, uint16_t destination_id,
+//				   uint8_t hop_count,
+				   bool is_originated,
+				   uint8_t priority, uint32_t message_id, uint8_t max_retries) {
     uint8_t next_tail = (tx_queue_tail + 1) % TX_QUEUE_SIZE;
     if (next_tail == tx_queue_head) return FAIL;
     if (size > MAX_PAYLOAD_SIZE) return FAIL;
 
-    struct tx_queue_entry *entry = &tx_queue[tx_queue_tail];
+    tx_queue_entry *entry = &tx_queue[tx_queue_tail];
 
     memcpy(entry->packet_data, serialized_data, size);
     entry->packet_size = size;
     entry->packet_type = type;
     entry->destination_id = destination_id;
+//    entry->hop_count = hop_count;
+    entry->is_originated = is_originated;
     entry->priority = priority;
     entry->message_id = message_id;
     entry->retry_count = 0;
     entry->max_retries = max_retries;
     entry->last_tx_time_ms = 0;
-    entry->done_processing = false;
+    entry->ack_received_hop_by_hop = false;
+    entry->ack_received_end_to_end = false;
     entry->ready_to_send = true;
 
     tx_queue_tail = next_tail;
@@ -140,13 +218,13 @@ bool TX_Queue_Push(uint8_t *serialized_data, uint16_t size,
 
 void TX_Queue_Pop(void) {
     while (tx_queue_head != tx_queue_tail) {
-        struct tx_queue_entry *pkt = &tx_queue[tx_queue_head];
+        tx_queue_entry *pkt = &tx_queue[tx_queue_head];
 
         bool is_sent_non_retryable = pkt->last_tx_time_ms != 0 &&
                                       (pkt->packet_type != DATA_PACKET &&
                                        pkt->packet_type != PING_PACKET);
 
-        if (pkt->done_processing || is_sent_non_retryable) {
+        if (pkt->ack_received_end_to_end || is_sent_non_retryable) {
             tx_queue_head = (tx_queue_head + 1) % TX_QUEUE_SIZE;
         } else {
             break;
@@ -154,32 +232,25 @@ void TX_Queue_Pop(void) {
     }
 }
 
-
-void TX_Queue_Handle_ACK(uint32_t message_id) {
-    uint8_t i = tx_queue_head;
-
-    while (i != tx_queue_tail) {
-        struct tx_queue_entry *pkt = &tx_queue[i];
-
-        bool is_ackable = pkt->packet_type == DATA_PACKET || pkt->packet_type == PING_PACKET;
-
-        if (pkt->message_id == message_id && is_ackable) {
-            pkt->done_processing = true;
-            return;
-        }
-        i = (i + 1) % TX_QUEUE_SIZE;
-    }
+int8_t TX_Queue_Find_By_Message_ID(uint32_t message_id) {
+	uint8_t i = tx_queue_head;
+	while (i != tx_queue_tail) {
+		if (tx_queue[i].message_id == message_id) {
+			return i;
+		}
+		i = (i + 1) % TX_QUEUE_SIZE;
+	}
+	return -1;
 }
-
 
 void TX_Queue_Drop_By_Destination(uint16_t destination_id) {
     uint8_t i = tx_queue_head;
 
     while (i != tx_queue_tail) {
-        struct tx_queue_entry *pkt = &tx_queue[i];
+        tx_queue_entry *pkt = &tx_queue[i];
 
-        if (pkt->destination_id == destination_id && !pkt->done_processing) {
-            pkt->done_processing = true;
+        if (pkt->destination_id == destination_id && !pkt->ack_received_end_to_end) {
+            pkt->ack_received_end_to_end = true;
 
 #ifdef DEBUG
             printf("Dropped packet to %d (type: %d, retries: %d)\n",
@@ -191,15 +262,15 @@ void TX_Queue_Drop_By_Destination(uint16_t destination_id) {
 }
 
 
-struct tx_queue_entry* TX_Queue_Peek(void) {
-    struct tx_queue_entry *highest = NULL;
+tx_queue_entry* TX_Queue_Peek(void) {
+    tx_queue_entry *highest = NULL;
     uint8_t check_count = 0;
     uint8_t i = tx_queue_head;
 
     while (i != tx_queue_tail && check_count < PRIORITY_PACKETS_AMOUNT) {
-        struct tx_queue_entry *pkt = &tx_queue[i];
+        tx_queue_entry *pkt = &tx_queue[i];
 
-        if (pkt->done_processing) {
+        if (pkt->ack_received_end_to_end) {
             i = (i + 1) % TX_QUEUE_SIZE;
             continue;
         }
@@ -218,7 +289,7 @@ struct tx_queue_entry* TX_Queue_Peek(void) {
 
 
 
-void TX_Queue_Handle_Packet_Failure(struct tx_queue_entry *pkt) {
+void TX_Queue_Handle_Packet_Failure(tx_queue_entry *pkt) {
     uint16_t failed_dest = pkt->destination_id;
     int8_t route_idx = Route_Exists(failed_dest);
     if (route_idx == -1) return;
@@ -245,31 +316,40 @@ void TX_Queue_Handle_Packet_Failure(struct tx_queue_entry *pkt) {
     }
 }
 
-void TX_Queue_Check_Timeouts(uint32_t timeout_ms) {
+void TX_Queue_Check_Timeouts(void) {
     uint8_t i = tx_queue_head;
     uint32_t now = HAL_GetTick();
 
     while (i != tx_queue_tail) {
-        struct tx_queue_entry *pkt = &tx_queue[i];
+        tx_queue_entry *pkt = &tx_queue[i];
 
-        if (pkt->done_processing) {
+        if (!pkt->is_originated && pkt->ack_received_hop_by_hop) {
+            pkt->ack_received_end_to_end = true;
+            i = (i + 1) % TX_QUEUE_SIZE;
+            continue;
+        }
+
+        if (pkt->ack_received_end_to_end) {
             i = (i + 1) % TX_QUEUE_SIZE;
             continue;
         }
 
         bool is_retryable = (pkt->packet_type == DATA_PACKET || pkt->packet_type == PING_PACKET);
-        if (!is_retryable) {
+        if (!is_retryable || pkt->last_tx_time_ms == 0) {
             i = (i + 1) % TX_QUEUE_SIZE;
             continue;
         }
 
-        if (pkt->last_tx_time_ms != 0 && (now - pkt->last_tx_time_ms) > timeout_ms) {
+        uint32_t elapsed = now - pkt->last_tx_time_ms;
+
+        if (elapsed > PACKET_RETRY_TIME_MS) {
             if (pkt->retry_count < pkt->max_retries) {
                 pkt->retry_count++;
                 pkt->ready_to_send = true;
+                pkt->last_tx_time_ms = 0;
             } else {
                 TX_Queue_Handle_Packet_Failure(pkt);
-                pkt->done_processing = true;
+                pkt->ack_received_end_to_end = true;
             }
         }
 
@@ -277,11 +357,10 @@ void TX_Queue_Check_Timeouts(uint32_t timeout_ms) {
     }
 }
 
-
 void TX_Queue_Process(void) {
-    TX_Queue_Check_Timeouts(PACKET_RETRY_TIME_MS);
+    TX_Queue_Check_Timeouts();
 
-    struct tx_queue_entry *pkt = TX_Queue_Peek();
+    tx_queue_entry *pkt = TX_Queue_Peek();
     if (pkt && pkt->ready_to_send) {
 #ifdef DEBUG
         printf("Sending packet from queue. Type: %d\n", pkt->packet_type);
@@ -304,7 +383,8 @@ void Mesh_Send_Hello(void) {
 			Increment_Sequence_Number(),
 			0,
 			Generate_RREQ_ID(),
-			0);
+			0,
+			true);
 }
 
 int8_t Route_Exists(uint16_t id) {
@@ -395,7 +475,7 @@ void Update_Route_Table(uint16_t dest_id, uint32_t dest_seq_num,
 		routing_table[route_table_entries].precursor_count = 0;
 		route_table_entries++;
 	} else {
-		struct route_table_entry *existing_route = &routing_table[source_idx];
+		route_table_entry *existing_route = &routing_table[source_idx];
 
 		if (Is_Fresher_Route(dest_seq_num, existing_route->destination_sequence_number)) {
 #ifdef DEBUG
@@ -446,7 +526,7 @@ void Add_To_Precursor_List(uint8_t route_idx, uint16_t precursor_id) {
 	if (precursor_id == 0x0000 || precursor_id == 0xFFFF)
 		return;
 
-	struct route_table_entry *route = &routing_table[route_idx];
+	route_table_entry *route = &routing_table[route_idx];
 
 	for (uint8_t i = 0; i < route->precursor_count; i++) {
 		if (route->precursor_list[i] == precursor_id)

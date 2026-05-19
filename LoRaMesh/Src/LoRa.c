@@ -11,46 +11,63 @@
 #define COMMAND_WRITE_PREFIX 0xC0
 #define SLEEP_TIME 200
 #define MODE_WORKING MODE_NORMAL
-
 #define UART_QUEUE_SIZE 1024
 #define RX_SIZE 64
 
-static GPIO_TypeDef *GPIOx_M0;
-static GPIO_TypeDef *GPIOx_M1;
-static GPIO_TypeDef *GPIOx_AUX;
-static GPIO_TypeDef *GPIOx_LED;
-static uint16_t PIN_M0;
-static uint16_t PIN_M1;
-static uint16_t PIN_AUX;
-static uint16_t PIN_LED;
-UART_HandleTypeDef *LoRa_UART;
-UART_HandleTypeDef *COM_UART;
+static const RegisterMap E22_registers = {
+    .addh = 0x0, .addl = 0x1, .netid = 0x2, .reg0 = 0x3,
+    .reg1 = 0x4, .reg2 = 0x5, .reg3 = 0x6,
+	.crypt_h = 0x7, .crypt_l = 0x8, .pid = 0x80
+};
+
+static const ModeConfig E22_modes = {
+    .normal = {GPIO_PIN_RESET, GPIO_PIN_RESET},
+    .wor = {GPIO_PIN_SET, GPIO_PIN_RESET},
+    .config = {GPIO_PIN_RESET, GPIO_PIN_SET},
+    .sleep = {GPIO_PIN_SET, GPIO_PIN_SET},
+    .wor_transmitting = {GPIO_PIN_SET, GPIO_PIN_RESET},  // Unused - defaults to WOR
+    .wor_receiving = {GPIO_PIN_SET, GPIO_PIN_RESET}  	 // Unused - defaults to WOR
+};
+
+static const RegisterMap E220_registers = {
+    .addh = 0x0, .addl = 0x1, .reg0 = 0x2,
+    .reg1 = 0x3, .reg2 = 0x4, .reg3 = 0x5,
+    .crypt_h = 0x6, .crypt_l = 0x7,
+    .netid = 0xFF, .pid = 0xFF // Unavailable in this module
+};
+
+static const ModeConfig E220_modes = {
+    .normal = {GPIO_PIN_RESET, GPIO_PIN_RESET},
+    .wor_transmitting = {GPIO_PIN_SET, GPIO_PIN_RESET},
+    .wor_receiving = {GPIO_PIN_RESET, GPIO_PIN_SET},
+    .sleep = {GPIO_PIN_SET, GPIO_PIN_SET},
+    .wor = {GPIO_PIN_SET, GPIO_PIN_RESET},	// Unused - defaults to WOR Transmitting
+    .config = {GPIO_PIN_SET, GPIO_PIN_SET}	// Same as sleep
+};
+
+static ModuleDriver current_driver = {0};
+
+static GPIO_TypeDef *GPIOx_M0, *GPIOx_M1, *GPIOx_AUX, *GPIOx_LED;
+static uint16_t PIN_M0, PIN_M1, PIN_AUX, PIN_LED;
+UART_HandleTypeDef *LoRa_UART, *COM_UART;
 RTC_HandleTypeDef *Mesh_RTC;
 TIM_HandleTypeDef *TASK_TIM;
 
 // DMA Circular Buffer
 static uint8_t rx_buffer[RX_SIZE] = {0};
 static uint8_t UART_Queue[UART_QUEUE_SIZE] = {0};
-static uint16_t queue_head = 0;
-static uint16_t queue_tail = 0;
-
-static uint8_t addh = 0;
-static uint8_t addl = 0;
-static uint8_t netid = 0;
-static uint8_t reg0 = 0;
-static uint8_t reg1 = 0;
-static uint8_t reg2 = 0;
-static uint8_t reg3 = 0;
-
+static uint16_t queue_head = 0, queue_tail = 0;
 static uint16_t rx_buffer_head = 0;
 static bool receiving_config_data = false;
-
 static uint8_t command_buffer[4];
+
+static RegisterCache cache = {0};
 
 uint16_t my_id;
 uint8_t my_channel;
+enum Module_Type my_module;
 
-void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_HandleTypeDef *hrtc, TIM_HandleTypeDef *tim) {
+void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_HandleTypeDef *hrtc, TIM_HandleTypeDef *tim, enum Module_Type module) {
 
 #ifdef DEBUG
 	DEBUG_lora_init_timestamp = Get_Timestamp();
@@ -60,6 +77,9 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 	COM_UART = huart2;
 	Mesh_RTC = hrtc;
 	TASK_TIM = tim;
+
+	my_module = module;
+	LoRa_InitDriver(module);
 
 	GPIOx_M0 = M0_GPIO_Port;
 	GPIOx_M1 = M1_GPIO_Port;
@@ -72,7 +92,7 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 	PIN_AUX = AUX_Pin;
 
 	LoRa_Start_Receive();
-	LoRa_ReadRegister(ADDH, 8); //Reading all registers and parsing the reply as one function call
+	LoRa_ReadRegister(current_driver.registers->addh, 8); //Reading all registers and parsing the reply as one function call
 
 	// It is recommended to set global LoRa parameters here or in the LoRa_init() from LoRa.c
 	// Address should be set up in the main.c, but that is in case that each MCU has a separate project of its own
@@ -82,17 +102,17 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 #ifdef DEBUG
 	LoRa_Set_Encryption(0xCAFE);
 
-	LoRa_Set_NetID(0xBF);
+	LoRa_Set_NetID(0x00);
 
 	LoRa_Set_SerialPortRate(SPR_9600);
 	LoRa_Set_SerialParityBit(SPB_8N1);
-	LoRa_Set_AirDataRate(ADR_2_4K);
+	LoRa_Set_AirDataRate(ADR_9_6K);
 
-	LoRa_Set_SubPacketSetting(SPS_240);
+	LoRa_Set_SubPacketSetting(SPS_128);
 	LoRa_Set_RSSIAmbientNoise(false);
 	LoRa_Set_TransmittingPower(TP_22DBM);
 
-	LoRa_Set_Channel(19);
+	LoRa_Set_Channel(19); // 19 for Russia
 
 	LoRa_Set_RSSIEnable(false);
 	LoRa_Set_TransmissionMode(TM_FIXED_POINT);
@@ -104,22 +124,23 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 
 	// END GLOBAL
 
-	my_channel = reg2;
-	my_id = (addh << 8) + addl;
+	my_channel = cache.reg2;
+	my_id = (cache.addh << 8) + cache.addl;
 
 	HAL_TIM_Base_Start_IT(tim);
 
 #ifdef DEBUG
 	printf("Init LoRa Module:\n");
-	printf("ADDH =  0x%02X\n", addh);
-	printf("ADDL =  0x%02X\n", addl);
-	printf("NETID = 0x%02X\n", netid);
-	printf("REG0 =  0x%02X\n", reg0);
-	printf("REG1 =  0x%02X\n", reg1);
-	printf("REG2 =  0x%02X\n", my_channel);
-	printf("REG3 =  0x%02X\n", reg3);
+	printf("ADDH =  0x%02X\n", cache.addh);
+	printf("ADDL =  0x%02X\n", cache.addl);
+	if (current_driver.registers->netid != 0xFF)
+		printf("NETID = 0x%02X\n", cache.netid);
+	printf("REG0 =  0x%02X\n", cache.reg0);
+	printf("REG1 =  0x%02X\n", cache.reg1);
+	printf("REG2 =  0x%02X\n", cache.reg2);
+	printf("REG3 =  0x%02X\n", cache.reg3);
 
-	printf("ID: %d, Channel: %d, NETID: %d\n", my_id, my_channel, netid);
+	printf("ID: %d, Channel: %d\n", my_id, my_channel);
 
 	printf("Init done.\n");
 
@@ -127,44 +148,52 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 #endif
 }
 
-// 00 - Normal mode
-// 01 - WOR mode
-// 10 - Configuration mode
-// 11 - Deep sleep mode
+void LoRa_InitDriver(enum Module_Type module) {
+	if (module == E22_900T22D) {
+		current_driver.type = E22_900T22D;
+		current_driver.registers = &E22_registers;
+		current_driver.modes = &E22_modes;
+	} else if (module == E220_900T22D) {
+		current_driver.type = E220_900T22D;
+		current_driver.registers = &E220_registers;
+		current_driver.modes = &E220_modes;
+	}
+}
+
 void LoRa_ModeSelect(enum Mode mode) {
 	GPIO_PinState AUX_state = HAL_GPIO_ReadPin(GPIOx_AUX, PIN_AUX);
 	if (AUX_state == GPIO_PIN_SET) {
 		HAL_Delay(2); // As per the user manual, switching only after 2ms when the output of AUX is high.
 	}
 
-	/*
-	 What if AUX_state is 0?
-	 1. If module is sending data to MCU after receiving wireless data - falling edge occurs to wake up MCU and then during data transfer
+	const ModePin *pins = NULL;
 
-	 2. During wireless transmitting, if AUX = 1 user can input data less than 1000 bytes into internal buffer.
-	 When AUX = 0 internal buffer didn't finish writing to RFIC completely.
-
-	 3. When power-on or instruction reset happens, OR module switches from deep sleep mode (Mode 3), self-check happens.
-	 During self-check AUX = 0. After the rising edge it's ready to work
-	 */
 	switch (mode) {
-	case MODE_NORMAL:
-		HAL_GPIO_WritePin(GPIOx_M0, PIN_M0, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(GPIOx_M1, PIN_M1, GPIO_PIN_RESET);
-		break;
-	case MODE_WOR:
-		HAL_GPIO_WritePin(GPIOx_M0, PIN_M0, GPIO_PIN_SET);
-		HAL_GPIO_WritePin(GPIOx_M1, PIN_M1, GPIO_PIN_RESET);
-		break;
-	case MODE_CONFIG:
-		HAL_GPIO_WritePin(GPIOx_M0, PIN_M0, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(GPIOx_M1, PIN_M1, GPIO_PIN_SET);
-		break;
-	case MODE_SLEEP:
-		HAL_GPIO_WritePin(GPIOx_M0, PIN_M0, GPIO_PIN_SET);
-		HAL_GPIO_WritePin(GPIOx_M1, PIN_M1, GPIO_PIN_SET);
-		break;
+	    case MODE_NORMAL:
+	        pins = &current_driver.modes->normal;
+	        break;
+	    case MODE_WOR:
+	    	pins = &current_driver.modes->wor;
+	        break;
+	    case MODE_CONFIG:
+	    	pins = &current_driver.modes->config;
+	        break;
+	    case MODE_SLEEP:
+	    	pins = &current_driver.modes->sleep;
+	        break;
+	    case MODE_WOR_TRANSMITTING:
+	   	    pins = &current_driver.modes->wor_transmitting;
+	   	    break;
+	    case MODE_WOR_RECEIVING:
+	   	    pins = &current_driver.modes->wor_receiving;
+	   	    break;
 	}
+
+    if (pins) {
+    	HAL_GPIO_WritePin(GPIOx_M0, PIN_M0, pins->m0_state);
+        HAL_GPIO_WritePin(GPIOx_M1, PIN_M1, pins->m1_state);
+    }
+
 	HAL_Delay(100);
 }
 
@@ -201,127 +230,150 @@ void LoRa_WriteRegister(uint8_t address, uint8_t length, uint8_t parameter) {
 // Register PID has 7 bytes
 void LoRa_ReadProductInfo(void) {
 	printf("Product info:\n");
-	LoRa_ReadRegister(PID, 7);
+
+	if (current_driver.registers->pid == 0xFF) {
+		printf("Product info not available on this module\n");
+		return;
+	}
+
+	LoRa_ReadRegister(current_driver.registers->pid, 7);
 }
 
 // Returns to factory default parameters
 // Frequency		- 869.125MHz
 // Address			- 0x0000
-// Channel			- 0x13
+// Channel			- 0x13 = 19 for Russia
 // Air data rate	- 2.4kbps
 // Baud rate		- 9600
 // Parity format	- 8N1
 // Power			- 22dbm
 void LoRa_ResetFirmware(void) {
 	printf("Resetting firmware...\n");
-	LoRa_WriteRegister(ADDH, 1, 0x00);
-	LoRa_WriteRegister(ADDL, 1, 0x00);
-	LoRa_WriteRegister(NETID, 1, 0x00);
-	LoRa_WriteRegister(REG0, 1, 0x62);
-	LoRa_WriteRegister(REG1, 1, 0x00);
-	LoRa_WriteRegister(REG2, 1, 0x13);
-	LoRa_WriteRegister(REG3, 1, 0x3);
-	LoRa_WriteRegister(CRYPT_H, 1, 0x00);
-	LoRa_WriteRegister(CRYPT_L, 1, 0x00);
+
+	LoRa_WriteRegister(current_driver.registers->addh, 1, 0x00);
+	LoRa_WriteRegister(current_driver.registers->addl, 1, 0x00);
+	LoRa_WriteRegister(current_driver.registers->reg0, 1, 0x62);
+	LoRa_WriteRegister(current_driver.registers->reg1, 1, 0x00);
+	LoRa_WriteRegister(current_driver.registers->reg2, 1, 0x13);
+	LoRa_WriteRegister(current_driver.registers->reg3, 1, 0x43);
+	LoRa_WriteRegister(current_driver.registers->crypt_h, 1, 0xBE);
+	LoRa_WriteRegister(current_driver.registers->crypt_l, 1, 0xEF);
+
+	// Only reset NETID if the module supports it
+	if (current_driver.registers->netid != 0xFF) {
+		LoRa_WriteRegister(current_driver.registers->netid, 1, 0x00);
+	}
+
 	printf("Reset done!\n");
 }
 
 // ADDR NETID SETS BEGIN
 void LoRa_Set_Address(uint16_t addr) { // Can be set as 0xFFFF for broadcast monitoring
-	LoRa_WriteRegister(ADDH, 1, addr >> 8);
-	LoRa_WriteRegister(ADDL, 1, addr & 0xFF);
+	LoRa_WriteRegister(current_driver.registers->addh, 1, addr >> 8);
+	LoRa_WriteRegister(current_driver.registers->addl, 1, addr & 0xFF);
 }
 
 void LoRa_Set_NetID(uint8_t netid) {
-	LoRa_WriteRegister(NETID, 1, netid);
+	if (current_driver.registers->netid != 0xFF) {
+		LoRa_WriteRegister(current_driver.registers->netid, 1, netid);
+	}
 }
-// ADDR NETID SETS BEGIN
+
+// REG0 SETS BEGIN
 void LoRa_Set_SerialPortRate(enum Serial_Port_Rate spr) {
-	uint8_t register_value = reg0 & 0b00011111;
+	uint8_t register_value = cache.reg0 & 0b00011111;
 	uint8_t parameter = register_value | (spr << 5);
-	LoRa_WriteRegister(REG0, 1, parameter);
+	LoRa_WriteRegister(current_driver.registers->reg0, 1, parameter);
 }
 
 void LoRa_Set_SerialParityBit(enum Serial_Parity_Bit spb) {
-	uint8_t register_value = reg0 & 0b11100111;
+	uint8_t register_value = cache.reg0 & 0b11100111;
 	uint8_t parameter = register_value | (spb << 3);
-	LoRa_WriteRegister(REG0, 1, parameter);
+	LoRa_WriteRegister(current_driver.registers->reg0, 1, parameter);
 }
 
 void LoRa_Set_AirDataRate(enum Air_Data_Rate adr) {
-	uint8_t register_value = reg0 & 0b11111000;
+	uint8_t register_value = cache.reg0 & 0b11111000;
 	uint8_t parameter = register_value | adr;
-	LoRa_WriteRegister(REG0, 1, parameter);
+	LoRa_WriteRegister(current_driver.registers->reg0, 1, parameter);
 }
 // REG0 SETS END
 
 // REG1 SETS BEGIN
 void LoRa_Set_SubPacketSetting(enum Sub_Packet_Setting sps) {
-	uint8_t register_value = reg1 & 0b00111111;
+	uint8_t register_value = cache.reg1 & 0b00111111;
 	uint8_t parameter = register_value | (sps << 6);
-	LoRa_WriteRegister(REG1, 1, parameter);
+	LoRa_WriteRegister(current_driver.registers->reg1, 1, parameter);
 }
 
 void LoRa_Set_RSSIAmbientNoise(bool state) {
-	uint8_t register_value = reg1 & 0b11011111;
+	uint8_t register_value = cache.reg1 & 0b11011111;
 	uint8_t parameter = register_value | (state << 5);
-	LoRa_WriteRegister(REG1, 1, parameter);
+	LoRa_WriteRegister(current_driver.registers->reg1, 1, parameter);
 }
 
 void LoRa_Set_TransmittingPower(enum Transmitting_Power tp) {
-	uint8_t register_value = reg1 & 0b11111100;
+	uint8_t register_value = cache.reg1 & 0b11111100;
 	uint8_t parameter = register_value | tp;
-	LoRa_WriteRegister(REG1, 1, parameter);
+	LoRa_WriteRegister(current_driver.registers->reg1, 1, parameter);
 }
 // REG1 SETS END
 
 // REG2 SETS BEGIN
 void LoRa_Set_Channel(uint8_t channel) {
-	LoRa_WriteRegister(REG2, 1, channel);
+	LoRa_WriteRegister(current_driver.registers->reg2, 1, channel);
 }
 // REG2 SETS END
 
 // REG3 SETS BEGIN
 void LoRa_Set_RSSIEnable(bool state) {
-	uint8_t register_value = reg3 & 0b01111111;
+	uint8_t register_value = cache.reg3 & 0b01111111;
 	uint8_t parameter = register_value | (state << 7);
-	LoRa_WriteRegister(REG3, 1, parameter);
+	LoRa_WriteRegister(current_driver.registers->reg3, 1, parameter);
 }
 
 void LoRa_Set_TransmissionMode(enum Transmission_Mode tm) {
-	uint8_t register_value = reg3 & 0b10111111;
+	uint8_t register_value = cache.reg3 & 0b10111111;
 	uint8_t parameter = register_value | (tm << 6);
-	LoRa_WriteRegister(REG3, 1, parameter);
+	LoRa_WriteRegister(current_driver.registers->reg3, 1, parameter);
 }
 
 void LoRa_Set_ReplyEnable(bool state) {
-	uint8_t register_value = reg3 & 0b11011111;
-	uint8_t parameter = register_value | (state << 5);
-	LoRa_WriteRegister(REG3, 1, parameter);
+	if (my_module != E220_900T22D) {
+		uint8_t register_value = cache.reg3 & 0b11011111;
+		uint8_t parameter = register_value | (state << 5);
+		LoRa_WriteRegister(current_driver.registers->reg3, 1, parameter);
+	} else {
+		printf("Reply function is not available in this LoRa module\n");
+	}
 }
 
 void LoRa_Set_LBTEnable(bool state) {
-	uint8_t register_value = reg3 & 0b11101111;
+	uint8_t register_value = cache.reg3 & 0b11101111;
 	uint8_t parameter = register_value | (state << 4);
-	LoRa_WriteRegister(REG3, 1, parameter);
+	LoRa_WriteRegister(current_driver.registers->reg3, 1, parameter);
 }
 
 void LoRa_Set_WORTransceiverControl(enum WOR_Transceiver_Control state) {
-	uint8_t register_value = reg3 & 0b11110111;
-	uint8_t parameter = register_value | (state << 3);
-	LoRa_WriteRegister(REG3, 1, parameter);
+	if (my_module != E220_900T22D) {
+		uint8_t register_value = cache.reg3 & 0b11110111;
+		uint8_t parameter = register_value | (state << 3);
+		LoRa_WriteRegister(current_driver.registers->reg3, 1, parameter);
+	} else {
+		printf("WOR control is not available in this LoRa module. It may be possible to use mode switching for that\n");
+	}
 }
 
 void LoRa_Set_WORCycle(enum WOR_Cycle cycle) {
-	uint8_t register_value = reg3 & 0b11111000;
+	uint8_t register_value = cache.reg3 & 0b11111000;
 	uint8_t parameter = register_value | cycle;
-	LoRa_WriteRegister(REG3, 1, parameter);
+	LoRa_WriteRegister(current_driver.registers->reg3, 1, parameter);
 }
 // REG3 SETS END
 
 void LoRa_Set_Encryption(uint16_t key) {
-	LoRa_WriteRegister(CRYPT_H, 1, key >> 8);
-	LoRa_WriteRegister(CRYPT_L, 1, key & 0xFF);
+	LoRa_WriteRegister(current_driver.registers->crypt_h, 1, key >> 8);
+	LoRa_WriteRegister(current_driver.registers->crypt_h, 1, key & 0xFF);
 }
 
 void LoRa_Start_Receive(void) {
@@ -389,43 +441,39 @@ void Process_LoRa_Reply(void) {
 		if (RX_Queue_Available() < total_reply_size)
 			break;
 
-		if (starting_address == PID) {
+		if (starting_address == current_driver.registers->pid) {
+			if (current_driver.registers->pid == 0xFF) {
+				RX_Queue_Pop(1);
+				continue;
+			}
+
 			if (data_length != 7)
 				return;
 			for (int i = 0; i < 6; i++)
-				printf("0x%02X ", data[i]);
+				printf("0x%02X ", data[3 + i]);
+			printf("\n");
+			RX_Queue_Pop(total_reply_size);
 			return;
 		}
 
-		uint8_t current_data;
-
 		for (int i = 0; i < data_length; i++) {
-			current_data = data[3 + i];
-			switch (starting_address + i) {
-			case ADDH:
-				addh = current_data;
-				break;
-			case ADDL:
-				addl = current_data;
-				break;
-			case NETID:
-				netid = current_data;
-				break;
-			case REG0:
-				reg0 = current_data;
-				break;
-			case REG1:
-				reg1 = current_data;
-				break;
-			case REG2:
-				reg2 = current_data;
-				break;
-			case REG3:
-				reg3 = current_data;
-				break;
-			default:
-				break;
-			}
+			uint8_t current_data = data[3 + i];
+			uint8_t reg_address = starting_address + i;
+
+			if (reg_address == current_driver.registers->addh)
+				cache.addh = current_data;
+			else if (reg_address == current_driver.registers->addl)
+				cache.addl = current_data;
+			else if (reg_address == current_driver.registers->netid && current_driver.registers->netid != 0xFF)
+				cache.netid = current_data;
+			else if (reg_address == current_driver.registers->reg0)
+				cache.reg0 = current_data;
+			else if (reg_address == current_driver.registers->reg1)
+				cache.reg1 = current_data;
+			else if (reg_address == current_driver.registers->reg2)
+				cache.reg2 = current_data;
+			else if (reg_address == current_driver.registers->reg3)
+				cache.reg3 = current_data;
 		}
 		receiving_config_data = false;
 		RX_Queue_Pop(total_reply_size);
