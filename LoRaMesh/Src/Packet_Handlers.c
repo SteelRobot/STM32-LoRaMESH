@@ -49,7 +49,7 @@ void Mesh_Send_Data(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_Data(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, DATA_PKT_LEN + data_length, DATA_PACKET, destination_id, 200, message_id, 3, is_originated);
+	TX_Queue_Push(packet_arr, DATA_PKT_LEN + data_length, DATA_PACKET, destination_id, is_originated, 200, message_id, 3);
 	offset = 0;
 }
 
@@ -92,7 +92,7 @@ void Mesh_Send_RREQ(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_RREQ(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, RREQ_PKT_LEN, RREQ_PACKET, destination_id, 255, 0, 0, is_originated);
+	TX_Queue_Push(packet_arr, RREQ_PKT_LEN, RREQ_PACKET, destination_id, is_originated, 255, 0, 0);
 	offset = 0;
 }
 
@@ -130,7 +130,7 @@ void Mesh_Send_RREP(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_RREP(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, RREP_PKT_LEN, RREP_PACKET, rreq_source_id, 100, 0, 0, is_originated);
+	TX_Queue_Push(packet_arr, RREP_PKT_LEN, RREP_PACKET, rreq_source_id, is_originated, 100, 0, 0);
 
 	offset = 0;
 }
@@ -175,7 +175,7 @@ void Mesh_Send_RERR(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_RERR(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, RRER_PKT_LEN, RERR_PACKET, receiver_id, 255, 0, 0, true);
+	TX_Queue_Push(packet_arr, RRER_PKT_LEN, RERR_PACKET, receiver_id, true, 255, 0, 0);
 
 	offset = 0;
 }
@@ -218,7 +218,7 @@ void Mesh_Send_Ping(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_Ping(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, PING_PKT_LEN, PING_PACKET, destination_id, 180, message_id, 3, is_originated);
+	TX_Queue_Push(packet_arr, PING_PKT_LEN, PING_PACKET, destination_id, is_originated, 180, message_id, 3);
 	offset = 0;
 }
 
@@ -254,7 +254,7 @@ void Mesh_Send_ACK(
 	packet_arr[2] = my_channel;
 
 	Format_Packet_ACK(tosend, packet_arr + LORA_OFFSET);
-	TX_Queue_Push(packet_arr, ACK_PKT_LEN, ACK_PACKET, destination_id, 254, 0, 0, is_originated);
+	TX_Queue_Push(packet_arr, ACK_PKT_LEN, ACK_PACKET, destination_id, is_originated, 254, 0, 0);
 	offset = 0;
 }
 
@@ -1012,7 +1012,6 @@ void Receive_Packet_Handler_ACK(uint8_t packet_data[], uint8_t plength) {
 				printf("E2E ACK received for message %" PRIu32 "\n", pkt.message_id);
 			} else {
 				orig_pkt->retry_count = 0;
-				orig_pkt->last_tx_time_ms = 0;
 				orig_pkt->ack_received_hop_by_hop = true;
 				printf("Hop-by-hop ACK received for message %" PRIu32 "\n", pkt.message_id);
 			}

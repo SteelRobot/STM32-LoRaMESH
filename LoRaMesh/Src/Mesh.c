@@ -195,6 +195,10 @@ bool TX_Queue_Push(uint8_t *serialized_data, uint16_t size,
     if (next_tail == tx_queue_head) return FAIL;
     if (size > MAX_PAYLOAD_SIZE) return FAIL;
 
+#ifdef DEBUG
+    printf("Adding a new packet to the queue. Type %d\n", type);
+#endif
+
     tx_queue_entry *entry = &tx_queue[tx_queue_tail];
 
     memcpy(entry->packet_data, serialized_data, size);
@@ -346,7 +350,6 @@ void TX_Queue_Check_Timeouts(void) {
             if (pkt->retry_count < pkt->max_retries) {
                 pkt->retry_count++;
                 pkt->ready_to_send = true;
-                pkt->last_tx_time_ms = 0;
             } else {
                 TX_Queue_Handle_Packet_Failure(pkt);
                 pkt->ack_received_end_to_end = true;
@@ -367,7 +370,7 @@ void TX_Queue_Process(void) {
 #endif
         LoRa_SendData(pkt->packet_data, pkt->packet_size);
         pkt->last_tx_time_ms = HAL_GetTick();
-        pkt->ready_to_send = 0;
+        pkt->ready_to_send = false;
     }
 
     TX_Queue_Pop();
