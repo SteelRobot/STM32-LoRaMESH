@@ -71,9 +71,6 @@ void Mesh_Transmit(uint16_t destination_id, uint8_t data[], uint8_t data_length)
 		return;
 	}
 
-#ifdef DEBUG
-	printf("Adding the message to the pending messages table\n");
-#endif
 	bool is_ping = (data_length == 4 && memcmp(data, "ping", 4) == 0);
 	int8_t route_idx = Route_Exists(destination_id);
 	if (route_idx != -1) {

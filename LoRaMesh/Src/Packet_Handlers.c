@@ -949,6 +949,7 @@ void Receive_Packet_Handler_Data(uint8_t packet_data[], uint8_t plength) {
 void Receive_Packet_Handler_Ping(uint8_t packet_data[], uint8_t plength) {
 	ping_packet pkt;
 	pkt = Unpack_Packet_Ping(packet_data);
+	uint32_t now = Get_Timestamp();
 
 	Mesh_Send_ACK(pkt.transmitter_id,
 			my_id,
@@ -974,7 +975,7 @@ void Receive_Packet_Handler_Ping(uint8_t packet_data[], uint8_t plength) {
 					pkt.timestamp_ms,
 					true);
 		} else {
-			printf("[T] Received ping reply from node id:%d. Latency: %" PRIu32 "ms\n", pkt.source_id, Get_Timestamp() - pkt.timestamp_ms);
+			printf("[T] Received ping reply from node id:%d. Latency: %" PRIu32 "ms\n", pkt.source_id, now - pkt.timestamp_ms);
 			return;
 		}
 	} else {

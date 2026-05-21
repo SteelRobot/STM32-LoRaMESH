@@ -117,13 +117,15 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-	LoRa_Init(&huart2, &hlpuart1, &hrtc, &htim2);
+	LoRa_Init(&huart2, &hlpuart1, &hrtc, &htim2, E22_900T22D);
 
 	// Set node's address here with LoRa_Set_Address(uint8_t address);
 	// Advisable to create multiple build for each MCU, so that you can assign addresses here, and just switch run configuration
 	// This way one ST-Link ID will be assigned to one address always
 	//BEGIN ADDRESS
+
 //	LoRa_Set_Address(3);
+
 	//END ADDRESS
 
 	Mesh_Init();

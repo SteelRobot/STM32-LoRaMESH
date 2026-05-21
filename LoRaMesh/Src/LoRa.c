@@ -59,6 +59,7 @@ static uint8_t UART_Queue[UART_QUEUE_SIZE] = {0};
 static uint16_t queue_head = 0, queue_tail = 0;
 static uint16_t rx_buffer_head = 0;
 static bool receiving_config_data = false;
+static bool receiving_rssi = false;
 static uint8_t command_buffer[4];
 
 static RegisterCache cache = {0};
@@ -106,7 +107,7 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 
 	LoRa_Set_SerialPortRate(SPR_9600);
 	LoRa_Set_SerialParityBit(SPB_8N1);
-	LoRa_Set_AirDataRate(ADR_9_6K);
+	LoRa_Set_AirDataRate(ADR_0_3K);
 
 	LoRa_Set_SubPacketSetting(SPS_128);
 	LoRa_Set_RSSIAmbientNoise(false);
@@ -114,7 +115,7 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 
 	LoRa_Set_Channel(19); // 19 for Russia
 
-	LoRa_Set_RSSIEnable(false);
+	LoRa_Set_RSSIEnable(true);
 	LoRa_Set_TransmissionMode(TM_FIXED_POINT);
 	LoRa_Set_ReplyEnable(false);
 	LoRa_Set_LBTEnable(false);
@@ -141,6 +142,8 @@ void LoRa_Init(UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2, RTC_Handl
 	printf("REG3 =  0x%02X\n", cache.reg3);
 
 	printf("ID: %d, Channel: %d\n", my_id, my_channel);
+
+	printf("Receiving RSSI: %d\n", receiving_rssi);
 
 	printf("Init done.\n");
 
@@ -472,8 +475,11 @@ void Process_LoRa_Reply(void) {
 				cache.reg1 = current_data;
 			else if (reg_address == current_driver.registers->reg2)
 				cache.reg2 = current_data;
-			else if (reg_address == current_driver.registers->reg3)
+			else if (reg_address == current_driver.registers->reg3) {
 				cache.reg3 = current_data;
+				if ((cache.reg3 & 0b10000000) == 0b10000000)
+					receiving_rssi = true;
+			}
 		}
 		receiving_config_data = false;
 		RX_Queue_Pop(total_reply_size);
@@ -525,9 +531,9 @@ void RX_Queue_Process(void) {
 
         uint8_t ptype = data[0];
         uint8_t payload_length = data[1];
-		uint16_t total_packet_size = OPCODE_OFFSET + LENGTH_OFFSET + payload_length + CRC_LEN;
+		uint16_t total_packet_size = OPCODE_OFFSET + LENGTH_OFFSET + payload_length + CRC_LEN + receiving_rssi;
 
-        if (!RX_Queue_Validate_Packet_Length(data, ptype, total_packet_size)) {
+        if (!RX_Queue_Validate_Packet_Length(data, ptype, total_packet_size - receiving_rssi)) {
 			RX_Queue_Pop(1);
 			continue;
         }
@@ -535,10 +541,10 @@ void RX_Queue_Process(void) {
 		if (RX_Queue_Available() < total_packet_size)
 			break;
 
-		uint16_t received_crc = (data[total_packet_size - 2] << 8) | data[total_packet_size - 1];
+		uint16_t received_crc = (data[total_packet_size - 2 - receiving_rssi] << 8) | data[total_packet_size - 1 - receiving_rssi];
 
 
-        if (!RX_Queue_Validate_Packet_CRC(data, total_packet_size, received_crc)) {
+        if (!RX_Queue_Validate_Packet_CRC(data, total_packet_size - receiving_rssi, received_crc)) {
 			RX_Queue_Pop(1);
 			continue;
         }
@@ -546,9 +552,12 @@ void RX_Queue_Process(void) {
 
 #ifdef DEBUG
         printf("Valid packet: opcode=0x%02X, payload_len=%d\n", ptype, payload_length);
+        if (receiving_rssi) {
+        	printf("RSSI strength = %d\n", data[total_packet_size - 1]);
+        }
 #endif
 
-		Receive_Packet_Handler(data, total_packet_size, ptype);
+		Receive_Packet_Handler(data, total_packet_size - receiving_rssi, ptype);
 
 
 		RX_Queue_Pop(total_packet_size);
